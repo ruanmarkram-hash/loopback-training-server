@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from app.local_calendar import calendar_date, calendar_zone, owned_item_zone
 from app.models.plan import SCHEDULED_STATUSES, Plan
 from app.models.queue import WorkoutQueue
 from app.models.user import User
@@ -30,11 +31,21 @@ HISTORY_WEEKS = 12
 
 def run_validation(db, user: User, plan: Plan | None = None) -> tuple[list[dict], list[dict]]:
     """Validate the user's upcoming schedule. Returns (warnings, week summaries)."""
-    today = datetime.now(timezone.utc).date()
+    zone = calendar_zone(db, user.id, plan)
+    today = calendar_date(datetime.now(timezone.utc), zone)
+    if today is None:
+        return [
+            {
+                "code": "calendar_timezone_unknown",
+                "severity": "warn",
+                "message": "Calendar timezone is unknown; planned load requires review.",
+                "estimated": True,
+            }
+        ], []
     activity = plan.activity_type if plan else "running"
 
     history = [
-        HistoryRun(date=w.start_date.date(), distance_m=w.total_distance, duration_s=w.duration)
+        HistoryRun(date=calendar_date(w.start_date, zone), distance_m=w.total_distance, duration_s=w.duration)
         for w in db.scalars(
             select(Workout).where(
                 Workout.user_id == user.id,
@@ -42,28 +53,34 @@ def run_validation(db, user: User, plan: Plan | None = None) -> tuple[list[dict]
                 Workout.start_date >= datetime.now(timezone.utc) - timedelta(weeks=HISTORY_WEEKS),
             )
         )
+        if calendar_date(w.start_date, zone) is not None
     ]
     easy_speed = estimate_easy_speed(history)
 
-    planned = [
-        session_from_composition(
-            item.workout_data, item.scheduled_date.date(), item.title, easy_speed
+    planned = []
+    for item in db.scalars(
+        select(WorkoutQueue).where(
+            WorkoutQueue.user_id == user.id,
+            WorkoutQueue.activity_type == activity,
+            WorkoutQueue.status.in_(("pending", "fetched", "synced")),
+            WorkoutQueue.scheduled_date.is_not(None),
         )
-        for item in db.scalars(
-            select(WorkoutQueue).where(
-                WorkoutQueue.user_id == user.id,
-                WorkoutQueue.activity_type == activity,
-                WorkoutQueue.status.in_(("pending", "fetched", "synced")),
-                WorkoutQueue.scheduled_date.is_not(None),
-            )
-        )
-        if item.scheduled_date.date() >= today
-    ]
+    ):
+        day = calendar_date(item.scheduled_date, owned_item_zone(db, item))
+        if day is None:
+            return [
+                {
+                    "code": "calendar_timezone_unknown",
+                    "severity": "warn",
+                    "message": "Queued run calendar timezone is unknown; planned load requires review.",
+                    "estimated": True,
+                }
+            ], []
+        if day >= today:
+            planned.append(session_from_composition(item.workout_data, day, item.title, easy_speed))
 
     strength_dates = set()
-    for p in db.scalars(
-        select(Plan).where(Plan.user_id == user.id, Plan.status.in_(SCHEDULED_STATUSES))
-    ):
+    for p in db.scalars(select(Plan).where(Plan.user_id == user.id, Plan.status.in_(SCHEDULED_STATUSES))):
         for session in resolve_sessions((p.metadata_ or {}).get("schedule")):
             strength_dates.add(session["date"])
 

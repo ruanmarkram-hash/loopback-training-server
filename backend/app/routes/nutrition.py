@@ -1,4 +1,5 @@
-from datetime import date, datetime, time, timedelta, timezone as dt_timezone
+from datetime import date, datetime, time, timedelta
+from datetime import timezone as dt_timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
@@ -112,15 +113,9 @@ def delete_nutrition_day(day: date, db: DbSession, user: CurrentUser, consent: C
     individual fields while keeping the day, use `clear` on the upsert instead.
     """
     consent.require(NUTRITION)
-    row = db.scalar(
-        select(DailyNutrition).where(
-            DailyNutrition.user_id == user.id, DailyNutrition.date == day
-        )
-    )
+    row = db.scalar(select(DailyNutrition).where(DailyNutrition.user_id == user.id, DailyNutrition.date == day))
     if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"No nutrition row for {day}"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No nutrition row for {day}")
     db.delete(row)
     db.commit()
     return NutritionDeleteResponse(date=day, deleted=1)
@@ -147,15 +142,13 @@ def nutrition_summary(
     the caller having to align three series by hand.
     """
     consent.require(NUTRITION)
-    end = end_date or date.today()
-    if end < start_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="end_date must not precede start_date"
-        )
     try:
         tz = parse_timezone(timezone) if timezone else dt_timezone.utc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    end = end_date or datetime.now(tz).date()
+    if end < start_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_date must not precede start_date")
 
     nutrition_rows = db.scalars(
         select(DailyNutrition).where(
@@ -195,8 +188,7 @@ def nutrition_summary(
         )
     ).all()
     energy = [
-        EnergyDay(day=r.date, active_kcal=r.active_energy_burned, basal_kcal=r.basal_energy_burned)
-        for r in energy_rows
+        EnergyDay(day=r.date, active_kcal=r.active_energy_burned, basal_kcal=r.basal_energy_burned) for r in energy_rows
     ]
     # Health metrics have no `partial` flag, so a day still in progress stores
     # only the hours elapsed and would read as a genuinely low-burn day. Trust

@@ -6,13 +6,14 @@ existing runs, and that the dashboard renders as a weekly grid.
 """
 
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from app.auth import CurrentUser
 from app.database import DbSession
+from app.local_calendar import calendar_date, calendar_zone, owned_item_zone, widened_utc_bounds
 from app.models.plan import SCHEDULED_STATUSES, Plan
 from app.models.queue import WorkoutQueue
 from app.models.workout import Workout
@@ -31,8 +32,7 @@ def build_calendar(db: DbSession, user_id: uuid.UUID | None, date_from: date, da
     unscoped, all-users view (the dashboard's temporary Phase-2 behaviour until
     it gets per-user auth in Phase 3).
     """
-    lo = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
-    hi = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+    lo, hi = widened_utc_bounds(date_from, date_to)
 
     # --- Scheduled runs (queued Apple Watch compositions) ---
     run_q = select(WorkoutQueue).where(
@@ -55,7 +55,6 @@ def build_calendar(db: DbSession, user_id: uuid.UUID | None, date_from: date, da
 
     # --- Completed strength sessions in the window (for done-matching) ---
     done_rows = db.scalars(done_q).all()
-    done_dates = {w.start_date.date() for w in done_rows}
 
     # --- Recurring strength sessions from live + upcoming plan schedules ---
     active_plans = db.scalars(active_plans_q).all()
@@ -71,43 +70,55 @@ def build_calendar(db: DbSession, user_id: uuid.UUID | None, date_from: date, da
     entries: list[dict] = []
 
     for r in run_rows:
-        d = r.scheduled_date.date()
-        entries.append({
-            "date": d.isoformat(),
-            "kind": "run",
-            "title": r.title,
-            "activityType": r.activity_type,
-            "status": r.status,
-            "planId": str(r.plan_id) if r.plan_id else None,
-            "planName": plan_names.get(r.plan_id),
-            "routineId": None,
-            "completed": r.status == "completed",
-            "conflict": False,
-        })
+        d = calendar_date(r.scheduled_date, owned_item_zone(db, r))
+        if d is None:
+            raise HTTPException(409, "Calendar timezone is unknown; review required")
+        if not date_from <= d <= date_to:
+            continue
+        entries.append(
+            {
+                "date": d.isoformat(),
+                "kind": "run",
+                "title": r.title,
+                "activityType": r.activity_type,
+                "status": r.status,
+                "planId": str(r.plan_id) if r.plan_id else None,
+                "planName": plan_names.get(r.plan_id),
+                "routineId": None,
+                "completed": r.status == "completed",
+                "conflict": False,
+            }
+        )
 
     for plan in active_plans:
+        zone = calendar_zone(db, plan.user_id, plan)
+        if zone is None:
+            raise HTTPException(409, "Calendar timezone is unknown; review required")
+        done_dates = {calendar_date(w.start_date, zone) for w in done_rows if w.user_id == plan.user_id}
         schedule = (plan.metadata_ or {}).get("schedule")
         for s in resolve_sessions(schedule):
             d = s["date"]
             if d < date_from or d > date_to:
                 continue
-            entries.append({
-                "date": d.isoformat(),
-                "kind": "strength",
-                "title": s["title"],
-                # The session's own type, not the plan's. These two disagree
-                # whenever a schedule sits on a non-strength plan, and the
-                # constant is also what `completed` is matched against above —
-                # so taking it from the plan let one entry claim two
-                # vocabularies at once.
-                "activityType": STRENGTH_ACTIVITY,
-                "status": None,
-                "planId": str(plan.id),
-                "planName": plan.name,
-                "routineId": s["routineId"],
-                "completed": d in done_dates,
-                "conflict": False,
-            })
+            entries.append(
+                {
+                    "date": d.isoformat(),
+                    "kind": "strength",
+                    "title": s["title"],
+                    # The session's own type, not the plan's. These two disagree
+                    # whenever a schedule sits on a non-strength plan, and the
+                    # constant is also what `completed` is matched against above —
+                    # so taking it from the plan let one entry claim two
+                    # vocabularies at once.
+                    "activityType": STRENGTH_ACTIVITY,
+                    "status": None,
+                    "planId": str(plan.id),
+                    "planName": plan.name,
+                    "routineId": s["routineId"],
+                    "completed": d in done_dates,
+                    "conflict": False,
+                }
+            )
 
     # --- Flag same-day run/strength collisions (skipped runs don't collide) ---
     kinds_by_date: dict[str, set] = {}
@@ -132,7 +143,9 @@ def get_calendar(
     """Unified run + strength calendar between ``from`` and ``to`` (defaults to
     today .. +28 days). Each entry carries a ``conflict`` flag when a run and a
     strength session share a date."""
-    today = datetime.now(timezone.utc).date()
+    today = calendar_date(datetime.now(timezone.utc), calendar_zone(db, user.id))
+    if today is None:
+        raise HTTPException(409, "Calendar timezone is unknown; review required")
     date_from = date_from or today
     date_to = date_to or (today + timedelta(days=28))
     return build_calendar(db, user.id, date_from, date_to)
