@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -49,8 +50,20 @@ def _pg_uri(url: str) -> str:
     return re.sub(r"^postgresql\+[^:]+", "postgresql", url)
 
 
+def _dump_records(backup_dir: Path) -> list[tuple[Path, os.stat_result]]:
+    """One freshness snapshot; retention may remove an enumerated archive."""
+    records = []
+    for path in backup_dir.glob(_DUMP_GLOB):
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        records.append((path, stat))
+    return sorted(records, key=lambda record: (record[1].st_mtime_ns, record[0].name))
+
+
 def _dumps(backup_dir: Path) -> list[Path]:
-    return sorted(backup_dir.glob(_DUMP_GLOB))  # stamped names sort chronologically
+    return [path for path, _ in _dump_records(backup_dir)]
 
 
 def run_backup(reason: str, *, tag: str = "") -> Path:
@@ -62,7 +75,7 @@ def run_backup(reason: str, *, tag: str = "") -> Path:
         raise BackupError(f"backup directory {backup_dir} is not writable (mounted read-only?)")
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    final = backup_dir / f"training-api-{stamp}{'-' + tag if tag else ''}.sql.gz"
+    final = backup_dir / f"training-api-{stamp}-{uuid.uuid4().hex}{'-' + tag if tag else ''}.sql.gz"
     partial = final.with_name(final.name + ".partial")
 
     with open(backup_dir / ".backup.lock", "w") as lock:
@@ -77,6 +90,7 @@ def run_backup(reason: str, *, tag: str = "") -> Path:
         # Both outputs are files, so communicate's deadline covers the whole child
         # process even when the network stalls before it produces a first byte.
         from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
         connection = conninfo_to_dict(_pg_uri(settings.db_uri))
         password = connection.pop("password", "")
         env = {**os.environ, "PGPASSWORD": password}
@@ -86,6 +100,7 @@ def run_backup(reason: str, *, tag: str = "") -> Path:
         with tempfile.TemporaryFile() as raw, tempfile.TemporaryFile() as err:
             proc = subprocess.Popen(command, stdout=raw, stderr=err, env=env)
             total = 0
+            partial_owned = False
             try:
                 try:
                     proc.communicate(timeout=_PG_DUMP_TIMEOUT_S)
@@ -96,20 +111,31 @@ def run_backup(reason: str, *, tag: str = "") -> Path:
                 if proc.returncode != 0:
                     err.seek(0)
                     stderr = err.read().decode(errors="replace").strip()
-                    raise BackupError(f"pg_dump failed: {stderr.splitlines()[-1] if stderr else f'exit code {proc.returncode}'}")
+                    raise BackupError(
+                        f"pg_dump failed: {stderr.splitlines()[-1] if stderr else f'exit code {proc.returncode}'}"
+                    )
                 raw.seek(0)
-                with gzip.open(partial, "wb") as gz:
-                    while chunk := raw.read(1024 * 1024):
-                        gz.write(chunk)
-                        total += len(chunk)
+                with partial.open("xb") as file:
+                    partial_owned = True
+                    with gzip.GzipFile(fileobj=file, mode="wb") as gz:
+                        while chunk := raw.read(1024 * 1024):
+                            gz.write(chunk)
+                            total += len(chunk)
                 if total < _MIN_PLAUSIBLE_BYTES:
                     raise BackupError(f"dump implausibly small ({total} bytes uncompressed); not keeping it")
-                partial.rename(final)
-            except BaseException:
+                try:
+                    os.link(partial, final)
+                except OSError as exc:
+                    raise BackupError("backup publication failed; existing archives preserved") from exc
+                partial.unlink()
+            except BaseException as exc:
                 if proc.poll() is None:
                     proc.kill()
                     proc.wait(timeout=5)
-                partial.unlink(missing_ok=True)
+                if partial_owned:
+                    partial.unlink(missing_ok=True)
+                if isinstance(exc, FileExistsError):
+                    raise BackupError("backup temporary archive already exists; preserved") from exc
                 raise
 
         # Retention: newest backup_keep dumps stay, older ones go.
@@ -149,8 +175,8 @@ async def run_scheduler() -> None:
         # Catch-up pass: if the newest dump is stale (server was off at backup
         # time), don't wait for tonight. Once only — a persistently failing
         # backup must not retry every minute.
-        dumps = _dumps(backup_dir)
-        stale = not dumps or (datetime.now(timezone.utc).timestamp() - dumps[-1].stat().st_mtime) > 26 * 3600
+        dumps = _dump_records(backup_dir)
+        stale = not dumps or (datetime.now(timezone.utc).timestamp() - dumps[-1][1].st_mtime) > 26 * 3600
         delay = 60 if (first and stale) else _seconds_until(settings.backup_time)
         first = False
         await asyncio.sleep(delay)
@@ -168,6 +194,7 @@ def pre_migrate() -> None:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
     from sqlalchemy import create_engine, inspect, text
+
     settings = get_settings()
     engine = create_engine(settings.db_uri)
     try:
