@@ -1,0 +1,17 @@
+{
+  "baseUrl": "http://127.0.0.1:8001",
+  "tokenFile": "/absolute/private/coach-worker.token",
+  "stateDir": "/absolute/private/coach-worker-state",
+  "killWrapper": "/absolute/path/to/configured/safe-kill.sh",
+  "authHome": "/absolute/path/to/existing/codex-home",
+  "pins": {
+    "version": "codex-cli 0.160.1",
+    "launcher": {"path": "/absolute/path/to/codex-launcher", "sha256": "REPLACE_FROM_PRIVATE_IDENTITY_DISCOVERY"},
+    "native": {"path": "/absolute/path/to/official/native/codex", "sha256": "REPLACE_FROM_PRIVATE_IDENTITY_DISCOVERY"},
+    "node": {"path": "/absolute/path/to/pinned/node", "sha256": "REPLACE_FROM_PRIVATE_IDENTITY_DISCOVERY"}
+  },
+  "cliLimits": {"timeoutMs": 90000, "maxDailyCalls": 20, "maxDailyTokens": 400000, "tokenReservation": 30000, "maxEventBytes": 262144},
+  "httpTimeoutMs": 5000,
+  "maxHttpAttempts": 3,
+  "pollMs": 10000
+}

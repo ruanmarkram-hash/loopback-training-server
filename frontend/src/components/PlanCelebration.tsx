@@ -67,7 +67,7 @@ export function PlanCelebrationModal({ plan, onClose }: { plan: Plan; onClose: (
     )
 
   return (
-    <Modal onClose={onClose} width={460}>
+    <Modal label="Complete plan" closeDisabled={complete.isPending} onClose={onClose} width={460}>
       <div className="celebrate">
         <Confetti />
         <div className="cel-trophy">
@@ -119,6 +119,7 @@ export function PlanCelebrationModal({ plan, onClose }: { plan: Plan; onClose: (
               ))}
             </div>
             <textarea
+              aria-label="Plan feedback"
               className="field-input"
               rows={4}
               style={{ marginTop: 12, resize: 'vertical', textAlign: 'left' }}
@@ -132,7 +133,7 @@ export function PlanCelebrationModal({ plan, onClose }: { plan: Plan; onClose: (
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }} onClick={onClose}>
+              <button className="btn-ghost" style={{ flex: 1, justifyContent: 'center' }} disabled={complete.isPending} onClick={onClose}>
                 Not now
               </button>
               <button

@@ -1,0 +1,35 @@
+.coach-card { margin-bottom:20px; padding:24px; }
+.coach-card h2 { font-size:20px; margin:0 0 12px; }
+.coach-card h3 { font-size:16px; margin:24px 0 12px; }
+.coach-card p { color:var(--muted); line-height:1.6; margin:8px 0 18px; }
+.coach-form { border:0; padding:0; margin:0; min-width:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.coach-form label { display:flex; flex-direction:column; gap:7px; font-size:13px; }
+.coach-form label:has(input[type=checkbox]) { flex-direction:row; align-items:center; }
+.coach-form fieldset { border:0; padding:0; margin:0; }
+.coach-form legend { font-size:13px; margin-bottom:8px; }
+.coach-wide { grid-column:1/-1; }
+.coach-days,.coach-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.coach-change { border-top:1px solid var(--border); padding:16px 0; overflow-wrap:anywhere; }
+.coach-forecast { max-height:420px; overflow:auto; margin:16px 0; }
+.coach-session { display:grid; grid-template-columns:100px minmax(0,1fr); gap:6px 12px; border-bottom:1px solid var(--border); padding:12px 0; font-size:13px; }
+.coach-session-status { grid-column:2; color:var(--muted); font-size:12px; }
+@media(max-width:600px) { .coach-form { grid-template-columns:minmax(0,1fr); } .coach-card { padding:18px; } .coach-session { grid-template-columns:90px minmax(0,1fr); } }
+.coach-session { display:block; }
+.coach-session summary { display:grid; grid-template-columns:100px minmax(0,1fr); gap:6px 12px; cursor:pointer; min-height:44px; align-items:center; }
+.coach-session-body { padding:8px 12px; border-left:2px solid var(--accent); }
+.coach-session-body ul { padding-left:20px; margin:8px 0; line-height:1.6; }
+.coach-days .filter-chip { min-height:44px; min-width:44px; }
+@media(max-width:600px) { .coach-session summary { grid-template-columns:90px minmax(0,1fr); } }
+.coach-expand { grid-column:3; grid-row:1; transition:transform 120ms; }
+.coach-session summary { grid-template-columns:100px minmax(0,1fr) 20px; }
+.coach-session[open] .coach-expand { transform:rotate(180deg); }
+.coach-session summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:600px) { .coach-session summary { grid-template-columns:90px minmax(0,1fr) 20px; } }
+
+.coach-form select.field-input { min-height:44px; height:44px; }
+.coach-form label:has(input[type=checkbox]) { min-height:44px; }
+
+/* Empty native WebKit date segments can resemble a chosen date. Keep focus editing native. */
+.coach-form input[type=date][data-empty=true]:not(:focus)::-webkit-datetime-edit { opacity:0; }
+
+.coach-evidence-week summary { display:block; padding:12px 0; }

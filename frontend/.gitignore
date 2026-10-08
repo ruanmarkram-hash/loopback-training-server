@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local browser verification output and authentication state
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.auth/

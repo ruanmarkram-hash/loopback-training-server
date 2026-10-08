@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
   server: {
     proxy: {
-      '/api': 'http://localhost:8001',
+      '/api': process.env.LOOPBACK_API_ORIGIN || 'http://localhost:8001',
     },
   },
 })

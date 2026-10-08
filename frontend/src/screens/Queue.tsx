@@ -72,7 +72,7 @@ function stepsOf(comp: WorkoutComposition): { label: string; flex: number }[] {
 
 export function Queue() {
   const { data: queue, isLoading, error } = useQueue(undefined, 200)
-  const { data: feedback } = useFeedback()
+  const { data: feedback, error: feedbackError, isLoading: feedbackLoading, isFetching: feedbackFetching, refetch: refetchFeedback } = useFeedback()
   const { data: plans } = usePlans()
   const ack = useAcknowledgeFeedback()
   const del = useDeleteQueueItem()
@@ -119,7 +119,7 @@ export function Queue() {
                 q.plan_id ? planName.get(q.plan_id) : null,
               ].filter(Boolean)
               return (
-                <div className="queue-card" key={q.id}>
+                <div className="queue-card" data-queue-id={q.id} key={q.id}>
                   <div className="q-top">
                     <IconTile icon={meta.icon} color={meta.color} size={40} iconSize={20} />
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -149,9 +149,12 @@ export function Queue() {
         <div>
           <div style={{ marginBottom: 13 }}>
             <SectionLabel>Missed-workout feedback</SectionLabel>
+            {ack.error && <ErrorNote error={ack.error} />}
           </div>
 
-          {(feedback ?? []).length === 0 && (
+          {feedbackLoading && <Loading label="Loading missed-workout feedback…" />}
+          {feedbackError && <div><ErrorNote error={feedbackError} /><button className="btn-ghost" disabled={feedbackFetching} onClick={()=>void refetchFeedback()}>Retry missed-workout feedback</button></div>}
+          {!feedbackLoading && !feedbackError && (feedback ?? []).length === 0 && (
             <div className="card">
               <EmptyState icon={CheckCircle} title="No missed workouts">
                 When a scheduled session is missed, the iOS app records why — those show up here
@@ -172,7 +175,7 @@ export function Queue() {
                       ? 'Skipped'
                       : 'Adjusted'
               return (
-                <div className={`fb-card${acked ? ' done' : ''}`} key={f.id}>
+                <div className={`fb-card${acked ? ' done' : ''}`} data-feedback-id={f.id} key={f.id}>
                   <div className="fb-top">
                     <WarningCircle size={26} weight="fill" color="var(--amber)" style={{ flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -220,7 +223,8 @@ export function Queue() {
           }
           confirmLabel="Delete"
           busy={del.isPending}
-          onCancel={() => setDeleting(null)}
+          error={del.error}
+          onCancel={() => { del.reset(); setDeleting(null) }}
           onConfirm={() =>
             del.mutate(deleting.id, {
               onSuccess: () => setDeleting(null),

@@ -1,0 +1,14 @@
+import {test,expect} from '@playwright/test'
+import {randomUUID} from 'node:crypto'
+import {useFixtureSession,fixtureApi} from './helpers'
+test('WEB-WORKOUT-001 delete cancel error and success remove correct cached row immediately',async({page,request},info)=>{
+ for(const id of ['UI-002','UI-003','UI-004'])info.annotations.push({type:'scenario',description:id})
+ for(const [id,states] of Object.entries({'web.workout-detail.delete-open':['recorded'],'web.workout-detail.delete-cancel':['confirm'],'web.workout-detail.delete-confirm':['confirm','failure']}))info.annotations.push({type:'control',description:JSON.stringify({id,states})})
+ const auth=fixtureApi('athleteB'),id=randomUUID(),other=randomUUID();const create=async(workoutId:string)=>{const result=await request.post('/api/workouts',{...auth,data:{id:workoutId,activityType:'running',startDate:new Date().toISOString(),endDate:new Date(Date.now()+1800000).toISOString(),duration:1800,totalDistance:5000,source:'Synthetic WEB QA',data:{qa_fixture:'workout deletion regression'}}});expect(result.status()).toBe(201)}
+ await create(id);await create(other)
+ let release:()=>void=()=>{};let blocked:Promise<void>=Promise.resolve()
+ try{await useFixtureSession(page,'athleteB');await page.goto('/workouts');const row=page.locator(`[data-workout-id="${id}"]`);await expect(row).toBeVisible();await row.click();await expect(page).toHaveURL(new RegExp(`/workouts/${id}$`));await page.getByRole('button',{name:'Delete workout',exact:true}).click();await page.getByRole('button',{name:'Cancel',exact:true}).click();expect((await request.get(`/api/workouts/${id}`,auth)).ok()).toBeTruthy()
+ await page.route(`**/api/workouts/${id}`,async route=>route.request().method()==='DELETE'?route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({detail:'Synthetic delete failure'})}):route.continue());await page.getByRole('button',{name:'Delete workout',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Delete',exact:true}).click();await expect(page.getByRole('alert')).toContainText('Synthetic delete failure');expect((await request.get(`/api/workouts/${id}`,auth)).ok()).toBeTruthy();await page.unroute(`**/api/workouts/${id}`)
+ blocked=new Promise<void>(resolve=>{release=resolve});await page.route('**/api/workouts?*',async route=>{await blocked;await route.continue()});await page.getByRole('dialog').getByRole('button',{name:'Delete',exact:true}).click();await expect(page).toHaveURL(/\/workouts$/);await expect(row).toHaveCount(0);await expect(page.locator(`[data-workout-id="${other}"]`)).toHaveCount(1);expect((await request.get(`/api/workouts/${id}`,auth)).status()).toBe(404);expect((await request.get(`/api/workouts/${other}`,auth)).ok()).toBeTruthy();release();await page.reload();await expect(row).toHaveCount(0)
+ }finally{release();for(const workoutId of [id,other])await request.delete(`/api/workouts/${workoutId}`,auth)}
+})

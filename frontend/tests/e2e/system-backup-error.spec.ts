@@ -1,0 +1,9 @@
+import {test,expect} from '@playwright/test'
+import {useFixtureSession,fixtureApi} from './helpers'
+test('WEB-SYSTEM-BACKUP002 pending backup disables repeated commands and injected failure preserves actual backup count',async({page,request},info)=>{
+ info.annotations.push({type:'evidence-layer',description:'real admin status API; injected held backup503, no actual dump attempted'},{type:'control',description:JSON.stringify({id:'web.system.backup',states:['enabled','disabled','inflight','failure']})})
+ const auth=fixtureApi('admin'),before=await request.get('/api/admin/system',auth);expect(before.status()).toBe(200);const count=(await before.json()).backupCount;let release!:()=>void,entered!:()=>void,commands=0;const gate=new Promise<void>(resolve=>release=resolve),held=new Promise<void>(resolve=>entered=resolve)
+ await page.route('**/api/admin/backup',async route=>{commands++;entered();await gate;await route.fulfill({status:503,json:{detail:'Synthetic backup service unavailable'}})})
+ try{await useFixtureSession(page,'admin');await page.goto('/system');const button=page.getByRole('button',{name:'Back up now',exact:true});await expect(button).toBeEnabled();await button.focus();await page.keyboard.press('Enter');await held;const pending=page.getByRole('button',{name:'Backing up…',exact:true});await expect(pending).toBeDisabled();await page.keyboard.press('Enter');expect(commands).toBe(1);release();await expect(page.getByRole('alert')).toContainText('Synthetic backup service unavailable');await expect(button).toBeEnabled();const after=await request.get('/api/admin/system',auth);expect(after.status()).toBe(200);expect((await after.json()).backupCount).toBe(count);await page.reload();await expect(page.getByRole('alert')).toHaveCount(0);await expect(button).toBeEnabled();expect(commands).toBe(1)
+ }finally{release()}
+})

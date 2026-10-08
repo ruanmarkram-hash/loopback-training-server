@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # everyone authenticates with per-user tokens from /api/auth/login.
     api_key: str | None = None
     environment: str = "LOCAL"
+    coaching_enabled: bool = True
     db_host: str | None = None
     # Backup dir mount (docker-compose); the admin System screen reports the
     # newest dump found here. Absent dir = "no backups". When backup_enabled,

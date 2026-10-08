@@ -169,3 +169,15 @@
     display: none;
   }
 }
+
+@media (max-width: 420px) {
+  .users-table .u-head, .users-table .u-row {
+    grid-template-columns: minmax(0, 1fr) 40px 56px;
+    gap: 8px;
+    padding: 13px 12px;
+  }
+  .users-table .u-head > :last-child { display: none; }
+  .u-actions { grid-column: 1 / -1; }
+  .u-row .avatar-lg { flex-shrink: 0; }
+  .u-row > div:first-child { overflow-wrap: anywhere; }
+}

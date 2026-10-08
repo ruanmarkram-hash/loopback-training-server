@@ -58,7 +58,7 @@ function MacroChart({ days, rangeDays }: { days: NutritionDay[]; rangeDays: numb
     .filter((d) => MACROS.some((m) => d[m.key] != null))
     .slice(-nutritionWindow(rangeDays))
   // Before the early return — the hook count must not depend on the data.
-  const hover = useChartHover(withMacros.length)
+  const hover = useChartHover(withMacros.length, 'band', 'Nutrition macros')
   const hovered = hover.index != null ? withMacros[hover.index] : null
   if (withMacros.length === 0) return null
 
@@ -115,7 +115,7 @@ function MacroChart({ days, rangeDays }: { days: NutritionDay[]; rangeDays: numb
             )
           })}
         </svg>
-        <ChartTooltip index={hover.index} count={withMacros.length}>
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={withMacros.length}>
           {hovered && (
             <>
               <span className="tip-date">
@@ -211,7 +211,7 @@ function EnergyBalanceChart({
 }) {
   const rows = pairEnergy(days, metrics).slice(-nutritionWindow(rangeDays))
   // Before the early return — the hook count must not depend on the data.
-  const hover = useChartHover(rows.length)
+  const hover = useChartHover(rows.length, 'band', 'Energy balance')
   const hovered = hover.index != null ? rows[hover.index] : null
   if (rows.length === 0) return null
 
@@ -285,7 +285,7 @@ function EnergyBalanceChart({
             )
           })}
         </svg>
-        <ChartTooltip index={hover.index} count={rows.length}>
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={rows.length}>
           {hovered && (
             <>
               <span className="tip-date">
@@ -339,7 +339,7 @@ function ProteinPerKgChart({ periods }: { periods: NutritionPeriod[] }) {
   // range toggle, and 52 dots on a line read fine where 52 bars would not.
   const withProtein = periods.filter((p) => p.protein_g_per_kg != null).slice(0, 52).reverse()
   // Before the early return — the hook count must not depend on the data.
-  const hover = useChartHover(withProtein.length, 'point')
+  const hover = useChartHover(withProtein.length, 'point', 'Protein per kilogram')
   const hovered = hover.index != null ? withProtein[hover.index] : null
   if (withProtein.length === 0) return null
 
@@ -387,7 +387,7 @@ function ProteinPerKgChart({ periods }: { periods: NutritionPeriod[] }) {
             )
           })}
         </svg>
-        <ChartTooltip index={hover.index} count={withProtein.length} mode="point">
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={withProtein.length} mode="point">
           {hovered && (
             <>
               <span className="tip-date">week of {fmtDay(hovered.period_start)}</span>

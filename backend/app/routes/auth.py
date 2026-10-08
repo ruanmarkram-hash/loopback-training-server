@@ -5,7 +5,7 @@ while `me` and token revocation enforce auth via the CurrentUser parameter.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -75,6 +75,7 @@ class ChangePasswordResponse(_CamelModel):
 
 class MintTokenRequest(_CamelModel):
     name: str
+    scope: str = "device"
     expires_at: AwareDatetime | None = None
 
     @field_validator("name")
@@ -236,8 +237,13 @@ def change_password(
 
 @router.post("/tokens", response_model=MintTokenResponse, status_code=status.HTTP_201_CREATED)
 def mint_token(body: MintTokenRequest, user: CurrentUser, db: DbSession) -> MintTokenResponse:
+    if body.scope not in ("device", "coach_worker"):
+        raise HTTPException(status_code=400, detail="Unknown token scope")
+    if body.scope == "coach_worker" and user.role != "user":
+        raise HTTPException(status_code=403, detail="Coach tokens must belong to an athlete")
     raw = generate_token()
-    token = ApiToken(user_id=user.id, token_hash=hash_token(raw), name=body.name, expires_at=body.expires_at)
+    expires = body.expires_at or (datetime.now(timezone.utc) + timedelta(days=7) if body.scope == "coach_worker" else None)
+    token = ApiToken(user_id=user.id, token_hash=hash_token(raw), name=body.name, expires_at=expires, scope=body.scope)
     db.add(token)
     record_auth_event(
         db, "token_created", username=user.username, user_id=user.id, actor_user_id=user.id,

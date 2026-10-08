@@ -13,3 +13,5 @@ from app.models.auth_event import AuthEvent
 from app.models.sleep_sample import SleepSample
 
 __all__ = ["Workout", "WorkoutQueue", "WorkoutAction", "WorkoutFeedback", "DailyHealthMetrics", "WorkoutInventory", "DailyNutrition", "Plan", "PlanNote", "User", "ApiToken", "AuthEvent", "SleepSample"]
+
+from app.models.coaching import AthleteProfile, PlanRevision, PrescriptionRevision, ExecutionAssessment, ReviewJob, ReviewProposal

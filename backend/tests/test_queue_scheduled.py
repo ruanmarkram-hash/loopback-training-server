@@ -46,7 +46,9 @@ def test_lists_delivered_items_still_due_in_date_order(client_a):
     items = scheduled(client_a)
     assert [i["id"] for i in items] == [sooner, fetched, later]
     # Same shape as the pending endpoint: the composition with the queue id injected.
-    assert items[0] == {"id": sooner, "displayName": "Intervals", "scheduledDate": "2026-09-21T07:00:00Z"}
+    assert {k: items[0][k] for k in ("id", "displayName", "scheduledDate")} == {"id": sooner, "displayName": "Intervals", "scheduledDate": "2026-09-21T07:00:00Z"}
+    assert items[0]["prescriptionRevision"]
+    assert len(items[0]["contentHash"]) == 64
 
 
 def test_today_counts_but_earlier_days_do_not(client_a):

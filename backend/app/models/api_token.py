@@ -15,6 +15,7 @@ class ApiToken(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="device", server_default="device")
     # SHA-256 hex of the token; the raw token is never stored.
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(Text, nullable=False, default="")

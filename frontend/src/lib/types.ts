@@ -222,6 +222,8 @@ export interface CompositionGoal {
 }
 
 export interface CompositionStep {
+  alert?: unknown
+  alerts?: unknown[]
   goal?: CompositionGoal
   purpose?: string // warmup | work | rest | cooldown
 }
@@ -231,6 +233,7 @@ export interface WorkoutComposition {
   activityType?: string
   scheduledDate?: string
   location?: string
+  singleGoal?: CompositionGoal
   warmup?: CompositionStep
   cooldown?: CompositionStep
   blocks?: { steps?: CompositionStep[]; iterations?: number }[]

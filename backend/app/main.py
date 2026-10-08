@@ -13,9 +13,28 @@ from slowapi.errors import RateLimitExceeded
 from app.auth import get_current_user
 from app.auth_events import client_ip, record_auth_event
 from app.backup import run_scheduler
+from app.coaching_scheduler import run_review_scheduler
+from app.config import get_settings
 from app.database import SessionLocal
 from app.rate_limit import limiter
-from app.routes import actions, admin, auth, feedback, health, health_metrics, inventory, me, nutrition, plan_notes, plans, queue, schedule, sleep, workouts
+from app.routes import (
+    coaching,
+    actions,
+    admin,
+    auth,
+    feedback,
+    health,
+    health_metrics,
+    inventory,
+    me,
+    nutrition,
+    plan_notes,
+    plans,
+    queue,
+    schedule,
+    sleep,
+    workouts,
+)
 from app.version import __version__
 
 
@@ -24,7 +43,12 @@ async def lifespan(_app: FastAPI):
     # Nightly-backup scheduler; exits on its own when backups are disabled or
     # the backup dir isn't writable (see app/backup.py).
     backup_task = asyncio.create_task(run_scheduler())
+    coaching_task = asyncio.create_task(run_review_scheduler(SessionLocal)) if get_settings().coaching_enabled else None
     yield
+    if coaching_task:
+        coaching_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await coaching_task
     backup_task.cancel()
     with suppress(asyncio.CancelledError):
         await backup_task
@@ -37,6 +61,24 @@ app = FastAPI(title="Training API", version=__version__, lifespan=lifespan)
 # Absent in local dev, where Vite serves the frontend and proxies /api here.
 SPA_DIST = Path(os.environ.get("SPA_DIST", "static")).resolve()
 SPA_INDEX = SPA_DIST / "index.html"
+
+
+@app.middleware("http")
+async def private_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if (
+        request.scope["path"].startswith("/api/")
+        or request.scope["path"] in ("/", "/login")
+        or response.headers.get("content-type", "").lower().startswith("text/html")
+    ):
+        response.headers["Cache-Control"] = "no-store, private"
+        vary = [v.strip() for v in response.headers.get("Vary", "").split(",") if v.strip()]
+        if "authorization" not in {v.lower() for v in vary}:
+            vary.append("Authorization")
+        response.headers["Vary"] = ", ".join(vary)
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
 
 # Rate limiting (used by /api/auth/login)
 app.state.limiter = limiter
@@ -89,6 +131,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 # Authenticated routes
 api_router = APIRouter(prefix="/api", dependencies=[Depends(get_current_user)])
+api_router.include_router(coaching.router, prefix="/coaching", tags=["coaching"])
 api_router.include_router(queue.workout_queue_router, prefix="/workouts/queue", tags=["queue"])
 api_router.include_router(actions.router, prefix="/workouts/actions", tags=["actions"])
 api_router.include_router(feedback.router, prefix="/workouts/feedback", tags=["feedback"])

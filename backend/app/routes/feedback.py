@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, status
-from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select
+from app.coaching_service import lock_athlete, owned_reference
+from app.models.action import WorkoutAction
+import uuid
 
 from app.auth import CurrentUser
 from app.database import DbSession
@@ -30,28 +32,17 @@ def submit_feedback(payload: FeedbackCreate, db: DbSession, user: CurrentUser):
         "new_date": payload.new_date,
         "dismissed": payload.dismissed,
     }
-    update_fields = {k: v for k, v in values.items() if k not in ("id", "user_id", "workout_id")}
-    stmt = insert(WorkoutFeedback).values(**values)
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_workout_feedback_user_workout",
-        set_=update_fields,
-    )
-    db.execute(stmt)
-
-    # A skip is a decision about the queued workout itself: retire the queue
-    # item (workout_id IS the queue item id — the app-facing GET injects it)
-    # so the watch stops being offered a run that was skipped. One-way, and a
-    # completed item is never downgraded.
-    if payload.action == "skip" and not payload.dismissed:
-        db.execute(
-            update(WorkoutQueue)
-            .where(
-                WorkoutQueue.id == payload.workout_id,
-                WorkoutQueue.user_id == user.id,
-                WorkoutQueue.status.notin_(("completed", "skipped")),
-            )
-            .values(status="skipped")
-        )
+    lock_athlete(db,user.id)
+    item=owned_reference(db,WorkoutQueue,payload.workout_id,user.id)
+    existing=db.scalar(select(WorkoutFeedback).where(WorkoutFeedback.user_id==user.id,WorkoutFeedback.workout_id==payload.workout_id))
+    if existing:
+        for key,value in values.items():
+            if key not in ('id','user_id','workout_id'):setattr(existing,key,value)
+    else:db.add(WorkoutFeedback(**values))
+    if payload.action=='skip' and not payload.dismissed and item and item.status not in ('completed','skipped'):
+        item.status='skipped'
+        if not db.scalar(select(WorkoutAction.id).where(WorkoutAction.user_id==user.id,WorkoutAction.workout_id==item.id,WorkoutAction.action=='delete')):
+            db.add(WorkoutAction(id=uuid.uuid4(),user_id=user.id,workout_id=item.id,action='delete'))
 
     # A move is the athlete re-dating the run on their watch (the app does
     # that locally before sending this). Carry the new date onto the queue

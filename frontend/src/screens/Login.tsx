@@ -1,9 +1,10 @@
+import {readLogoutNotice} from '../lib/logout-notice'
 import { LockKey, WarningCircle } from '@phosphor-icons/react'
 import { LogoMark } from '../components/LogoMark'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ApiError, api } from '../lib/api'
+import { ApiError, api, captureAuthCommand } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { LoginResponse, SetupStatus } from '../lib/types'
 import '../styles/login.css'
@@ -19,13 +20,13 @@ export function Login() {
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(readLogoutNotice)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     api
-      .get<SetupStatus>('/api/auth/setup')
+      .get<SetupStatus>('/api/auth/setup',undefined,{auth:false})
       .then((s) => {
         if (cancelled) return
         setMode(s.required ? 'setup' : 'login')
@@ -80,12 +81,14 @@ export function Login() {
     }
     setBusy(true)
     setError(null)
+    const command=captureAuthCommand()
     try {
       const res = await api.post<LoginResponse>(
         '/api/auth/setup',
         { username: username.trim(), password, displayName: displayName.trim() || undefined },
-        { auth: false },
+        { auth: false,command },
       )
+      command.assertUnchanged()
       adoptSession(res)
       navigate('/', { replace: true })
     } catch (err) {
@@ -108,7 +111,7 @@ export function Login() {
   }
 
   const errorNote = error && (
-    <div className="login-error">
+    <div className="login-error" role="alert">
       <WarningCircle size={15} weight="fill" />
       {error}
     </div>
@@ -155,6 +158,7 @@ export function Login() {
 
             <div className="login-field-label">Username</div>
             <input
+              aria-label="Username"
               className="login-input"
               type="text"
               autoComplete="username"
@@ -164,6 +168,7 @@ export function Login() {
             />
             <div className="login-field-label">Display name (optional)</div>
             <input
+              aria-label="Display name (optional)"
               className="login-input"
               type="text"
               autoComplete="name"
@@ -173,6 +178,7 @@ export function Login() {
             />
             <div className="login-field-label">Password</div>
             <input
+              aria-label="Password"
               className="login-input"
               type="password"
               autoComplete="new-password"
@@ -181,6 +187,7 @@ export function Login() {
             />
             <div className="login-field-label">Confirm password</div>
             <input
+              aria-label="Confirm password"
               className="login-input"
               type="password"
               autoComplete="new-password"
@@ -206,6 +213,7 @@ export function Login() {
           <>
             <div className="login-field-label">Username</div>
             <input
+              aria-label="Username"
               className="login-input"
               type="text"
               autoComplete="username"
@@ -215,6 +223,7 @@ export function Login() {
             />
             <div className="login-field-label">Password</div>
             <input
+              aria-label="Password"
               className="login-input"
               type="password"
               autoComplete="current-password"

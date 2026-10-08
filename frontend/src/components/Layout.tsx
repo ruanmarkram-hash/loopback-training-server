@@ -15,7 +15,7 @@ import {
   Watch,
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -29,6 +29,7 @@ const NAV: { to: string; label: string; icon: Icon }[] = [
   { to: '/calendar', label: 'Calendar', icon: CalendarDots },
   { to: '/workouts', label: 'Workouts', icon: PersonSimpleRun },
   { to: '/plans', label: 'Plans', icon: FlagBanner },
+  { to: '/coach', label: 'Coaching', icon: Brain },
   { to: '/notes', label: 'Notes', icon: Brain },
   { to: '/health', label: 'Health', icon: Heartbeat },
   { to: '/queue', label: 'Queue', icon: Watch },
@@ -45,6 +46,17 @@ export function Layout() {
   const navigate = useNavigate()
   const header = usePageHeaderValue()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [narrow,setNarrow] = useState(()=>window.matchMedia('(max-width: 860px)').matches)
+  const sidebar=useRef<HTMLElement>(null),menu=useRef<HTMLButtonElement>(null)
+  useEffect(()=>{const media=window.matchMedia('(max-width: 860px)');const update=(event:MediaQueryListEvent)=>{setNarrow(event.matches);if(!event.matches)setDrawerOpen(false)};media.addEventListener('change',update);return()=>media.removeEventListener('change',update)},[])
+  useEffect(()=>{
+    if(!narrow||!drawerOpen)return
+    const focusable=()=>Array.from(sidebar.current?.querySelectorAll<HTMLElement>('a[href],button:enabled')??[]).filter(element=>element.getClientRects().length>0)
+    ;(sidebar.current?.querySelector<HTMLElement>('a[aria-current="page"]')||focusable()[0])?.focus()
+    const keydown=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();setDrawerOpen(false)}if(event.key==='Tab'){const elements=focusable(),first=elements[0],last=elements.at(-1);if(!first||!last)return;if(event.shiftKey&&(document.activeElement===first||!sidebar.current?.contains(document.activeElement))){event.preventDefault();last.focus()}else if(!event.shiftKey&&(document.activeElement===last||!sidebar.current?.contains(document.activeElement))){event.preventDefault();first.focus()}}}
+    document.addEventListener('keydown',keydown)
+    return()=>{document.removeEventListener('keydown',keydown);menu.current?.focus()}
+  },[narrow,drawerOpen])
 
   const isAdmin = user?.role === 'admin'
 
@@ -65,7 +77,7 @@ export function Layout() {
   return (
     <div className="app-frame">
       {drawerOpen && <div className="sidebar-scrim" onClick={() => setDrawerOpen(false)} />}
-      <aside className={`sidebar${drawerOpen ? ' open' : ''}`}>
+      <aside ref={sidebar} id="app-navigation" aria-label="Navigation" role={narrow&&drawerOpen?'dialog':undefined} aria-modal={narrow&&drawerOpen?true:undefined} inert={narrow&&!drawerOpen} className={`sidebar${drawerOpen ? ' open' : ''}`}>
         <div className="sidebar-logo">
           <LogoMark />
           <span className="logo-name">Loopback</span>
@@ -116,10 +128,10 @@ export function Layout() {
         </div>
       </aside>
 
-      <div className="main-col">
+      <div className="main-col" inert={narrow&&drawerOpen}>
         <header className="topbar">
           <div className="topbar-left">
-            <button className="menu-btn" aria-label="Menu" onClick={() => setDrawerOpen(true)}>
+            <button ref={menu} className="menu-btn" aria-label="Menu" aria-controls="app-navigation" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>
               <List size={18} weight="bold" />
             </button>
             {header.backTo && (

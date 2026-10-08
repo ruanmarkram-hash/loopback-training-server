@@ -1,3 +1,4 @@
+import type { InfiniteData } from '@tanstack/react-query'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { toDateKey, addDays } from './format'
@@ -236,7 +237,17 @@ export function useDeleteWorkout() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api.delete(`/api/workouts/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workouts'] }),
+    onSuccess: (_result, id) => {
+      // Remove the deleted identity from both cached list shapes before navigation.
+      qc.setQueriesData<WorkoutListItem[]>({ queryKey: ['workouts'] }, rows => rows?.filter(row => row.id !== id))
+      qc.setQueriesData<InfiniteData<WorkoutListItem[]>>({ queryKey: ['workouts-infinite'] }, data => data && {
+        ...data, pages: data.pages.map(rows => rows.filter(row => row.id !== id)),
+      })
+      qc.removeQueries({ queryKey: ['workout', id] })
+      for (const key of ['workouts', 'workouts-infinite', 'workout-summary', 'coaching']) {
+        void qc.invalidateQueries({ queryKey: [key] })
+      }
+    },
   })
 }
 

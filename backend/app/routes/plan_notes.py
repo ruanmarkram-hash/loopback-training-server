@@ -157,11 +157,11 @@ def update_note(note_id: uuid.UUID, payload: PlanNoteUpdate, db: DbSession, user
         note.kind = payload.kind
     if payload.summary is not None:
         note.summary = payload.summary
-    if payload.body is not None:
+    if "body" in payload.model_fields_set:
         note.body = payload.body
     if payload.importance is not None:
         note.importance = payload.importance
-    if payload.expires_at is not None:
+    if "expires_at" in payload.model_fields_set:
         note.expires_at = payload.expires_at
 
     db.commit()

@@ -74,29 +74,41 @@ def run_backup(reason: str, *, tag: str = "") -> Path:
         logger.info("backup (%s): dumping to %s", reason, final.name)
         # stderr goes to a temp file, not a pipe: a failing pg_dump can write
         # more than a pipe buffer holds, which would deadlock the stdout read.
-        with tempfile.TemporaryFile() as err:
-            proc = subprocess.Popen(
-                ["pg_dump", "--dbname", _pg_uri(settings.db_uri)],
-                stdout=subprocess.PIPE,
-                stderr=err,
-            )
+        # Both outputs are files, so communicate's deadline covers the whole child
+        # process even when the network stalls before it produces a first byte.
+        from psycopg.conninfo import conninfo_to_dict, make_conninfo
+        connection = conninfo_to_dict(_pg_uri(settings.db_uri))
+        password = connection.pop("password", "")
+        env = {**os.environ, "PGPASSWORD": password}
+        # Preserve every libpq URI option (TLS verification, certificates,
+        # options, timeouts, multi-host settings) in a password-free conninfo.
+        command = ["pg_dump", "--dbname", make_conninfo(**connection)]
+        with tempfile.TemporaryFile() as raw, tempfile.TemporaryFile() as err:
+            proc = subprocess.Popen(command, stdout=raw, stderr=err, env=env)
             total = 0
             try:
-                assert proc.stdout is not None
-                with gzip.open(partial, "wb") as gz:
-                    while chunk := proc.stdout.read(1024 * 1024):
-                        gz.write(chunk)
-                        total += len(chunk)
-                rc = proc.wait(timeout=_PG_DUMP_TIMEOUT_S)
-                if rc != 0:
+                try:
+                    proc.communicate(timeout=_PG_DUMP_TIMEOUT_S)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                    raise BackupError("pg_dump timed out; backup not retained") from None
+                if proc.returncode != 0:
                     err.seek(0)
                     stderr = err.read().decode(errors="replace").strip()
-                    raise BackupError(f"pg_dump failed: {stderr.splitlines()[-1] if stderr else f'exit code {rc}'}")
+                    raise BackupError(f"pg_dump failed: {stderr.splitlines()[-1] if stderr else f'exit code {proc.returncode}'}")
+                raw.seek(0)
+                with gzip.open(partial, "wb") as gz:
+                    while chunk := raw.read(1024 * 1024):
+                        gz.write(chunk)
+                        total += len(chunk)
                 if total < _MIN_PLAUSIBLE_BYTES:
-                    raise BackupError(f"dump implausibly small ({total} bytes uncompressed) — not keeping it")
+                    raise BackupError(f"dump implausibly small ({total} bytes uncompressed); not keeping it")
                 partial.rename(final)
             except BaseException:
-                proc.kill()
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
                 partial.unlink(missing_ok=True)
                 raise
 
@@ -152,41 +164,32 @@ async def run_scheduler() -> None:
 
 
 def pre_migrate() -> None:
-    """Dump before pending migrations run. Warn-don't-block: never raises."""
+    """Fail closed before changing a nonempty schema without a verified backup."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import create_engine, inspect, text
     settings = get_settings()
-    if not settings.backup_enabled:
-        print("pre-migration backup: skipped (BACKUP_ENABLED=false)")
-        return
-    backup_dir = Path(settings.backup_dir)
-    if not backup_dir.is_dir() or not os.access(backup_dir, os.W_OK):
-        print(f"pre-migration backup: skipped ({backup_dir} missing or read-only)")
-        return
+    engine = create_engine(settings.db_uri)
     try:
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-        from sqlalchemy import create_engine, inspect, text
-
-        engine = create_engine(get_settings().db_uri)
-        try:
-            with engine.connect() as conn:
-                if not inspect(conn).has_table("alembic_version"):
-                    print("pre-migration backup: skipped (fresh database, nothing to protect)")
-                    return
-                current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
-        finally:
-            engine.dispose()
-
-        cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
-        head = ScriptDirectory.from_config(cfg).get_current_head()
-        if current == head:
-            print("pre-migration backup: skipped (schema already at head)")
-            return
-        path = run_backup(f"pre-migrate {current} -> {head}", tag="premigrate")
-        print(f"pre-migration backup: {path.name} ({current} -> {head})")
-    except BackupError as e:
-        print(f"WARNING: pre-migration backup failed: {e} — continuing with migration")
-    except Exception as e:  # noqa: BLE001 — never block startup on the safety net
-        print(f"WARNING: pre-migration backup failed unexpectedly: {e} — continuing with migration")
+        with engine.connect() as conn:
+            tables = inspect(conn).get_table_names()
+            if not tables:
+                print("pre-migration backup: skipped (fresh database, nothing to protect)")
+                return
+            if "alembic_version" not in tables:
+                raise BackupError("Existing unmanaged schema has no Alembic revision; migration refused")
+            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    finally:
+        engine.dispose()
+    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    if current == head:
+        print("pre-migration backup: skipped (schema already at head)")
+        return
+    if not settings.backup_enabled:
+        raise BackupError("Pending schema migration requires a backup; BACKUP_ENABLED is false")
+    path = run_backup(f"pre-migrate {current} -> {head}", tag="premigrate")
+    print(f"pre-migration backup: {path.name} ({current} -> {head})")
 
 
 if __name__ == "__main__":

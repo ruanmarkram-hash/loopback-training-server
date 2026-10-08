@@ -32,6 +32,14 @@ from app.validation_service import run_validation
 router = APIRouter()
 
 
+def _approved_forecast_ids(plan):
+    from app.coaching_forecast import validated_forecast, validated_program_metadata
+
+    projection = validated_program_metadata(plan.metadata_)
+    forecast = validated_forecast((plan.metadata_ or {}).get("forecast"), projection.timezone) if projection else None
+    return {uuid.UUID(session["id"]) for session in forecast} if forecast is not None else None
+
+
 def _progress_by_plan(db: DbSession, user: User, plans: list[Plan]) -> dict[uuid.UUID, PlanProgress]:
     """Session counts per plan: queued runs (one grouped query for the batch)
     plus, for plans carrying a recurring schedule, the scheduled strength
@@ -55,6 +63,33 @@ def _progress_by_plan(db: DbSession, user: User, plans: list[Plan]) -> dict[uuid
             p.runs_skipped += count
         else:
             p.runs_remaining += count
+
+    from app.models.coaching import PrescriptionRevision
+
+    for plan in plans:
+        if not (plan.metadata_ or {}).get("forecastApproved"):
+            continue
+        progress = out.setdefault(plan.id, PlanProgress())
+        forecast_ids = _approved_forecast_ids(plan)
+        if forecast_ids is None:
+            progress._forecast_known = False
+            continue
+        issued = set(
+            db.scalars(select(WorkoutQueue.id).where(WorkoutQueue.user_id == user.id, WorkoutQueue.plan_id == plan.id))
+        )
+        for identifier in forecast_ids - issued:
+            progress.runs_total += 1
+            history = db.scalars(
+                select(PrescriptionRevision).where(
+                    PrescriptionRevision.user_id == user.id, PrescriptionRevision.workout_id == identifier
+                )
+            ).all()
+            if db.get(WorkoutQueue, identifier) is None and any(
+                row.snapshot.get("plan_id") == str(plan.id) for row in history
+            ):
+                progress.runs_retired += 1
+            else:
+                progress.runs_remaining += 1
 
     sessions_by_plan = {p.id: resolve_sessions((p.metadata_ or {}).get("schedule")) for p in plans}
     dates = [s["date"] for sessions in sessions_by_plan.values() for s in sessions]
@@ -91,13 +126,26 @@ def _is_finishable(plan: Plan, progress: PlanProgress, today: date) -> bool:
     celebrate."""
     if plan.status != "active" or plan.start_date > today:
         return False
+    if (plan.metadata_ or {}).get("forecastApproved") and (not progress._forecast_known or progress.runs_remaining > 0):
+        return False
     window_over = plan.end_date is not None and plan.end_date < today
-    all_runs_done = (
-        progress.runs_total > 0
-        and progress.runs_remaining == 0
-        and progress.runs_completed > 0
-    )
+    all_runs_done = progress.runs_total > 0 and progress.runs_remaining == 0 and progress.runs_completed > 0
     return window_over or all_runs_done
+
+
+def _guard_program_completion(db, user, plan):
+    from app.coaching_service import lock_athlete
+
+    lock_athlete(db, user.id)
+    db.refresh(plan)
+    if not (plan.metadata_ or {}).get("forecastApproved"):
+        return
+    progress = _progress_by_plan(db, user, [plan])[plan.id]
+    if not _is_finishable(plan, progress, datetime.now(timezone.utc).date()):
+        raise HTTPException(
+            409,
+            "Approved program has outstanding or unknown forecast sessions; complete or retire its full calendar first",
+        )
 
 
 def _plan_read(plan: Plan, progress: PlanProgress, today: date) -> PlanRead:
@@ -139,18 +187,19 @@ def _build_schedule_response(db: DbSession, user: User, plan: Plan) -> PlanSched
     warnings: list[str] = []
     for s in raw_sessions:
         conflict_titles = runs.get(s["date"], [])
-        sessions.append(ScheduledSession(
-            date=s["date"],
-            weekday=s["weekday"],
-            title=s["title"],
-            routine_id=s["routineId"],
-            conflict=bool(conflict_titles),
-            conflicts_with=conflict_titles,
-        ))
+        sessions.append(
+            ScheduledSession(
+                date=s["date"],
+                weekday=s["weekday"],
+                title=s["title"],
+                routine_id=s["routineId"],
+                conflict=bool(conflict_titles),
+                conflicts_with=conflict_titles,
+            )
+        )
         if conflict_titles:
             warnings.append(
-                f"{s['date'].isoformat()} '{s['title']}' overlaps scheduled run(s): "
-                f"{', '.join(conflict_titles)}"
+                f"{s['date'].isoformat()} '{s['title']}' overlaps scheduled run(s): {', '.join(conflict_titles)}"
             )
 
     return PlanScheduleResponse(
@@ -176,8 +225,9 @@ def create_plan(payload: PlanCreate, db: DbSession, user: CurrentUser):
     db.add(plan)
     db.commit()
     db.refresh(plan)
-    return _plan_read(plan, _progress_by_plan(db, user, [plan]).get(plan.id, PlanProgress()),
-                      datetime.now(timezone.utc).date())
+    return _plan_read(
+        plan, _progress_by_plan(db, user, [plan]).get(plan.id, PlanProgress()), datetime.now(timezone.utc).date()
+    )
 
 
 @router.get("", response_model=list[PlanRead])
@@ -211,6 +261,9 @@ def get_plan(plan_id: uuid.UUID, db: DbSession, user: CurrentUser):
 def update_plan(plan_id: uuid.UUID, payload: PlanUpdate, db: DbSession, user: CurrentUser):
     plan = get_owned(db, Plan, plan_id, user)
 
+    if payload.status == "completed":
+        _guard_program_completion(db, user, plan)
+
     if payload.name is not None:
         plan.name = payload.name
     if payload.activity_type is not None:
@@ -228,8 +281,9 @@ def update_plan(plan_id: uuid.UUID, payload: PlanUpdate, db: DbSession, user: Cu
 
     db.commit()
     db.refresh(plan)
-    return _plan_read(plan, _progress_by_plan(db, user, [plan]).get(plan.id, PlanProgress()),
-                      datetime.now(timezone.utc).date())
+    return _plan_read(
+        plan, _progress_by_plan(db, user, [plan]).get(plan.id, PlanProgress()), datetime.now(timezone.utc).date()
+    )
 
 
 @router.post("/{plan_id}/complete", response_model=PlanCompleteResponse)
@@ -243,6 +297,8 @@ def complete_plan(plan_id: uuid.UUID, payload: PlanCompleteRequest, db: DbSessio
     plan = get_owned(db, Plan, plan_id, user)
     if plan.status != "active":
         raise HTTPException(status_code=400, detail="Only an active plan can be completed")
+
+    _guard_program_completion(db, user, plan)
 
     today = datetime.now(timezone.utc).date()
     completion: dict = {"completed_on": today.isoformat()}

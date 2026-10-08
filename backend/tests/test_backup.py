@@ -93,3 +93,46 @@ def test_backup_endpoint_unavailable_dir_is_503(backup_settings, tmp_path, clien
 
 def test_backup_endpoint_rejects_non_admin(client_a):
     assert client_a.post("/api/admin/backup").status_code == 403
+
+
+def test_pre_migrate_fails_closed_on_existing_unmanaged_schema(backup_settings,client_a):
+    backup_settings()
+    # The API TestClient uses a real create_all schema without Alembic ownership.
+    client_a.get('/api/auth/me')
+    with pytest.raises(BackupError, match='unmanaged schema'):
+        backup_module.pre_migrate()
+
+
+def test_stalled_dump_deadline_cleans_partial_and_releases_lock(backup_settings,tmp_path,monkeypatch):
+    import subprocess,sys,time
+    backup_settings()
+    real_popen=subprocess.Popen
+    started=time.monotonic()
+    with monkeypatch.context() as patch:
+        patch.setattr(backup_module,'_PG_DUMP_TIMEOUT_S',0.2)
+        patch.setattr(backup_module.subprocess,'Popen',lambda *a,**kw:real_popen([sys.executable,'-c','import time;time.sleep(60)'],**kw))
+        with pytest.raises(BackupError,match='timed out'):
+            run_backup('stalled child fixture')
+    assert time.monotonic()-started<3
+    assert not list(tmp_path.glob('*.sql.gz*'))
+    assert run_backup('after timeout').exists()
+
+
+def test_dump_connection_preserves_libpq_options_without_password_arguments(backup_settings, monkeypatch):
+    real_popen = backup_module.subprocess.Popen
+    observed = {}
+    def record(command, **kwargs):
+        observed.update(command=command, env=kwargs['env'])
+        return real_popen(command, **kwargs)
+    settings = backup_settings()
+    backup_settings(database_url=settings.db_uri + '?sslmode=prefer&application_name=backup_fixture&options=-c%20statement_timeout%3D10000')
+    monkeypatch.setattr(backup_module.subprocess, 'Popen', record)
+    run_backup('connection option fixture')
+    from psycopg.conninfo import conninfo_to_dict
+    connection = conninfo_to_dict(observed['command'][observed['command'].index('--dbname') + 1])
+    assert connection['sslmode'] == 'prefer'
+    assert connection['application_name'] == 'backup_fixture'
+    assert connection['options'] == '-c statement_timeout=10000'
+    assert 'password' not in connection
+    assert observed['env']['PGPASSWORD']
+    assert observed['env']['PGPASSWORD'] not in str(observed['command'])

@@ -40,7 +40,7 @@ function CreateUserModal({ onClose }: { onClose: () => void }) {
     )
 
   return (
-    <Modal onClose={onClose} width={460}>
+    <Modal label="Create member" closeDisabled={create.isPending} onClose={onClose} width={460}>
       <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
         Create member
       </div>
@@ -50,6 +50,7 @@ function CreateUserModal({ onClose }: { onClose: () => void }) {
 
       <div className="field-label">Display name</div>
       <input
+              aria-label="Display name"
         className="field-input"
         style={{ marginBottom: 14 }}
         placeholder="Sam Rivera"
@@ -61,6 +62,7 @@ function CreateUserModal({ onClose }: { onClose: () => void }) {
         <div style={{ flex: 1 }}>
           <div className="field-label">Username</div>
           <input
+              aria-label="Username"
             className="field-input"
             placeholder="sam"
             autoCapitalize="none"
@@ -84,6 +86,7 @@ function CreateUserModal({ onClose }: { onClose: () => void }) {
 
       <div className="field-label">Password (min {MIN_PASSWORD} characters)</div>
       <input
+              aria-label="Password"
         className="field-input"
         type="password"
         autoComplete="new-password"
@@ -98,7 +101,7 @@ function CreateUserModal({ onClose }: { onClose: () => void }) {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-        <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+        <button className="btn-ghost" style={{ flex: 1 }} disabled={create.isPending} onClick={onClose}>
           Cancel
         </button>
         <button className="btn-accent" style={{ flex: 1 }} disabled={!valid || create.isPending} onClick={submit}>
@@ -114,7 +117,7 @@ function ResetPasswordModal({ user, onClose }: { user: AdminUserRow; onClose: ()
   const [password, setPassword] = useState('')
 
   return (
-    <Modal onClose={onClose} width={420}>
+    <Modal label="Reset password" closeDisabled={reset.isPending} onClose={onClose} width={420}>
       <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
         Reset password
       </div>
@@ -125,6 +128,7 @@ function ResetPasswordModal({ user, onClose }: { user: AdminUserRow; onClose: ()
 
       <div className="field-label">New password (min {MIN_PASSWORD} characters)</div>
       <input
+              aria-label="New password"
         className="field-input"
         type="password"
         autoComplete="new-password"
@@ -140,7 +144,7 @@ function ResetPasswordModal({ user, onClose }: { user: AdminUserRow; onClose: ()
       )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-        <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+        <button className="btn-ghost" style={{ flex: 1 }} disabled={reset.isPending} onClick={onClose}>
           Cancel
         </button>
         <button
@@ -199,7 +203,8 @@ function UserTokensPanel({ user }: { user: AdminUserRow }) {
           body="The device using this token stops authenticating immediately. They can log in again on that device to re-add it."
           confirmLabel="Revoke"
           busy={revoke.isPending}
-          onCancel={() => setRevoking(null)}
+          error={revoke.error}
+          onCancel={() => { revoke.reset(); setRevoking(null) }}
           onConfirm={() =>
             revoke.mutate(
               { userId: user.id, tokenId: revoking.id },
@@ -258,6 +263,7 @@ export function Users() {
       </div>
 
       {adminUsers.error != null && <ErrorNote error={adminUsers.error} />}
+      {!deactivating && setActive.error != null && <ErrorNote error={setActive.error} />}
       {adminUsers.isLoading && <Loading label="Loading members…" />}
 
       {adminUsers.data && (
@@ -277,7 +283,7 @@ export function Users() {
             const consent = consentMeta(u)
             return (
               <div key={u.id}>
-              <div className="u-row" style={u.isActive ? undefined : { opacity: 0.55 }}>
+              <div className="u-row" data-user-id={u.id} style={u.isActive ? undefined : { opacity: 0.55 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span
                     className="avatar-lg"
@@ -386,7 +392,8 @@ export function Users() {
           body="All their tokens are revoked — every device stops authenticating immediately. Their data is kept and the account can be reactivated later."
           confirmLabel="Deactivate"
           busy={setActive.isPending}
-          onCancel={() => setDeactivating(null)}
+          error={setActive.error}
+          onCancel={() => { setActive.reset(); setDeactivating(null) }}
           onConfirm={() =>
             setActive.mutate(
               { id: deactivating.id, isActive: false },

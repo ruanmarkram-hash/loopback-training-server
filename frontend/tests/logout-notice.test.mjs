@@ -1,0 +1,5 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {readLogoutNotice,writeLogoutNotice,clearLogoutNotice} from '../src/lib/logout-notice.ts'
+test('blocked optional session notice preserves a warning and never interrupts caller cleanup',()=>{globalThis.sessionStorage={getItem(){throw new DOMException('Blocked','SecurityError')},setItem(){throw new DOMException('Blocked','SecurityError')},removeItem(){throw new DOMException('Blocked','SecurityError')}};assert.equal(readLogoutNotice(),null);assert.doesNotThrow(()=>writeLogoutNotice('Generic revocation warning'));assert.equal(readLogoutNotice(),'Generic revocation warning');assert.doesNotThrow(clearLogoutNotice);assert.equal(readLogoutNotice(),null)})
+test('successful session adoption clears a warning even when stale browser storage cannot be removed',()=>{globalThis.sessionStorage={getItem(){return 'Stale warning'},setItem(){throw Error('Blocked')},removeItem(){throw Error('Blocked')}};writeLogoutNotice('Current warning');clearLogoutNotice();assert.equal(readLogoutNotice(),null)})

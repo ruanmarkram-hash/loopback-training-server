@@ -73,33 +73,50 @@ def estimate_easy_speed(history: list[HistoryRun]) -> float | None:
     return median(speeds) if speeds else None
 
 
+def _alert_speed(alert):
+    from app.coaching_policy import speed_meters_per_second
+
+    bounds = speed_meters_per_second(alert)
+    if bounds is not None or alert.get("type") != "pace":
+        return bounds
+    units = {
+        "secondsPerKilometer": (1000, 1),
+        "minutesPerKilometer": (1000, 60),
+        "secondsPerMile": (1609.344, 1),
+        "minutesPerMile": (1609.344, 60),
+    }
+    scale = units.get(alert.get("unit"))
+    if scale is None:
+        return None
+    return scale[0] / (alert["max"] * scale[1]), scale[0] / (alert["min"] * scale[1])
+
+
 def _step_speed(step: dict, fallback: float) -> tuple[float, bool]:
-    """Speed to convert a time goal to distance: alert band midpoint, else
-    the fallback (marked estimated)."""
-    alert = step.get("alert") or {}
-    if alert.get("type") in ("speed", "pace"):
-        lo, hi = alert.get("min"), alert.get("max")
-        if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) and lo > 0 and hi > 0:
-            return (lo + hi) / 2, False
-    return fallback, True
+    bounds = _alert_speed(step.get("alert") or {})
+    return ((bounds[0] + bounds[1]) / 2, False) if bounds is not None else (fallback, True)
 
 
-def _step_volume(step: dict, easy_speed: float) -> tuple[float, float, bool]:
-    """(distance_m, duration_s, estimated) for one composition step."""
+def _step_volume(step: dict, easy_speed: float) -> tuple[float | None, float | None, bool]:
+    """Unknown/open/unsupported units never become assumed metric zero."""
     goal = step.get("goal") or {}
     value = goal.get("value")
-    if not isinstance(value, (int, float)) or value <= 0:
-        return 0.0, 0.0, True  # open/absent goal — unknown volume
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        return None, None, True
     unit = goal.get("unit")
+    speed, assumed = _step_speed(step, easy_speed)
     if goal.get("type") == "distance":
-        meters = value * 1000 if unit in ("kilometers", "km") else value
-        speed, _ = _step_speed(step, easy_speed)
-        return meters, meters / speed, False
+        factor = {"meters": 1, "m": 1, "kilometers": 1000, "km": 1000, "miles": 1609.344, "mi": 1609.344}.get(unit)
+        if factor is None:
+            return None, None, True
+        meters = value * factor
+        return meters, meters / speed, assumed and bool(step.get("alert"))
     if goal.get("type") == "time":
-        seconds = value * 60 if unit in ("minutes", "min") else value
-        speed, assumed = _step_speed(step, easy_speed)
+        factor = {"seconds": 1, "s": 1, "minutes": 60, "min": 60, "hours": 3600, "h": 3600}.get(unit)
+        if factor is None:
+            return None, None, True
+        seconds = value * factor
         return seconds * speed, seconds, assumed
-    return 0.0, 0.0, True
+    return None, None, True
 
 
 def session_from_composition(
@@ -109,7 +126,9 @@ def session_from_composition(
     easy_speed: float | None,
 ) -> PlannedSession:
     """Reduce a workout composition to date/volume/intensity facts."""
-    if not workout_data:
+    from app.composition_shape import composition_shape_valid
+
+    if not workout_data or not composition_shape_valid(workout_data):
         return PlannedSession(date=on_date, title=title, has_data=False, estimated=True)
 
     speed = easy_speed or DEFAULT_EASY_SPEED_MS
@@ -117,14 +136,24 @@ def session_from_composition(
 
     def add_step(step: dict, iterations: int = 1) -> None:
         m, s, assumed = _step_volume(step, speed)
+        if m is None or s is None:
+            session.has_data = False
+            session.estimated = True
+            return
         session.distance_m += m * iterations
         session.duration_s += s * iterations
         if assumed and (m or s):
             session.estimated = True
+        bounds = _alert_speed(step.get("alert") or {})
+        if step.get("purpose") not in ("rest", "recovery") and bounds and bounds[0] > speed * HARD_SPEED_FACTOR:
+            session.hard = True
 
     for key in ("warmup", "cooldown"):
         if isinstance(workout_data.get(key), dict):
             add_step(workout_data[key])
+
+    if workout_data.get("singleGoal") and not workout_data.get("blocks"):
+        add_step({"goal": workout_data["singleGoal"]})
 
     for block in workout_data.get("blocks") or []:
         steps = block.get("steps") or []
@@ -135,19 +164,27 @@ def session_from_composition(
             session.hard = True
         for step in steps:
             add_step(step, iterations)
-            if step.get("purpose") not in ("rest", "recovery"):
-                alert = step.get("alert") or {}
-                if alert.get("type") in ("speed", "pace"):
-                    lo = alert.get("min")
-                    if isinstance(lo, (int, float)) and lo > speed * HARD_SPEED_FACTOR:
-                        session.hard = True
+    if not session.has_data:
+        session.distance_m = 0
+        session.duration_s = 0
 
     return session
 
 
 def extract_race_date(metadata: dict | None) -> date | None:
     """Dig plan.metadata for a race date (LLM-written, so be lenient)."""
-    for container in (metadata or {}, (metadata or {}).get("goals") or {}):
+    if metadata is not None and not isinstance(metadata, dict):
+        return None
+    if (metadata or {}).get("forecastApproved"):
+        from app.coaching_forecast import validated_program_metadata
+
+        projection = validated_program_metadata(metadata)
+        if projection is None:
+            return None
+        containers = [metadata, *projection.goals]
+    else:
+        containers = (metadata or {}, (metadata or {}).get("goals") or {})
+    for container in containers:
         if not isinstance(container, dict):
             continue
         for key in ("race_date", "raceDate"):
@@ -198,16 +235,24 @@ def validate_schedule(
     """
     warnings: list[dict] = []
 
-    def warn(code: str, severity: str, message: str, week: date | None = None,
-             data: dict | None = None, estimated: bool = False) -> None:
-        warnings.append({
-            "code": code,
-            "severity": severity,
-            "message": message,
-            "week": week.isoformat() if week else None,
-            "data": data or {},
-            "estimated": estimated,
-        })
+    def warn(
+        code: str,
+        severity: str,
+        message: str,
+        week: date | None = None,
+        data: dict | None = None,
+        estimated: bool = False,
+    ) -> None:
+        warnings.append(
+            {
+                "code": code,
+                "severity": severity,
+                "message": message,
+                "week": week.isoformat() if week else None,
+                "data": data or {},
+                "estimated": estimated,
+            }
+        )
 
     # ── weekly aggregation (merged timeline: history + plan) ──
     actual_km: dict[date, float] = defaultdict(float)
@@ -236,9 +281,12 @@ def validate_schedule(
             no_data_sessions += 1
 
     if no_data_sessions:
-        warn("missing_composition", "info",
-             f"{no_data_sessions} scheduled item(s) have no workout composition — "
-             "volume checks underestimate those weeks.")
+        warn(
+            "missing_composition",
+            "info",
+            f"{no_data_sessions} scheduled item(s) have no workout composition — "
+            "volume checks underestimate those weeks.",
+        )
 
     def total(wk: date) -> float:
         return actual_km.get(wk, 0.0) + planned_km.get(wk, 0.0)
@@ -277,63 +325,93 @@ def validate_schedule(
                 note = (
                     f" Baseline spans {len(rest_weeks)} week(s) with no running "
                     f"({', '.join(w.isoformat() for w in rest_weeks)}), which lowers it."
-                    if rest_weeks else ""
+                    if rest_weeks
+                    else ""
                 )
-                warn("ramp_rate", severity,
-                     f"Week of {wk.isoformat()}: {week_km:.0f} km vs 4-week baseline "
-                     f"{baseline:.0f} km ({ratio:.2f}×). Playbook guideline is ≤1.3×.{note}",
-                     week=wk,
-                     data={**data, "ratio": ratio,
-                           "baseline_weeks": [
-                               {"week": w.isoformat(), "km": round(km, 1)}
-                               for w, km in zip(prior_weeks, prior)
-                           ]},
-                     estimated=week_estimated[wk])
+                warn(
+                    "ramp_rate",
+                    severity,
+                    f"Week of {wk.isoformat()}: {week_km:.0f} km vs 4-week baseline "
+                    f"{baseline:.0f} km ({ratio:.2f}×). Playbook guideline is ≤1.3×.{note}",
+                    week=wk,
+                    data={
+                        **data,
+                        "ratio": ratio,
+                        "baseline_weeks": [
+                            {"week": w.isoformat(), "km": round(km, 1)} for w, km in zip(prior_weeks, prior)
+                        ],
+                    },
+                    estimated=week_estimated[wk],
+                )
         elif week_km > NO_BASELINE_WARN_KM:
             severity = "critical" if week_km > NO_BASELINE_CRITICAL_KM else "warn"
-            warn("volume_without_baseline", severity,
-                 f"Week of {wk.isoformat()} plans {week_km:.0f} km but the athlete has "
-                 f"{'no recorded history' if baseline is None else f'a baseline of only {baseline:.0f} km'} "
-                 "to support it.",
-                 week=wk, data=data, estimated=week_estimated[wk])
+            warn(
+                "volume_without_baseline",
+                severity,
+                f"Week of {wk.isoformat()} plans {week_km:.0f} km but the athlete has "
+                f"{'no recorded history' if baseline is None else f'a baseline of only {baseline:.0f} km'} "
+                "to support it.",
+                week=wk,
+                data=data,
+                estimated=week_estimated[wk],
+            )
 
         if week_km >= LONG_RUN_MIN_WEEK_KM and longest[wk] / week_km > LONG_RUN_SHARE_WARN:
-            warn("long_run_share", "warn",
-                 f"Week of {wk.isoformat()}: longest run {longest[wk]:.0f} km is "
-                 f"{longest[wk] / week_km:.0%} of the week's {week_km:.0f} km "
-                 "(playbook guideline ≤30%).",
-                 week=wk, data={"longest_km": round(longest[wk], 1), **data},
-                 estimated=week_estimated[wk])
+            warn(
+                "long_run_share",
+                "warn",
+                f"Week of {wk.isoformat()}: longest run {longest[wk]:.0f} km is "
+                f"{longest[wk] / week_km:.0%} of the week's {week_km:.0f} km "
+                "(playbook guideline ≤30%).",
+                week=wk,
+                data={"longest_km": round(longest[wk], 1), **data},
+                estimated=week_estimated[wk],
+            )
 
         rails = guardrails or {}
         run_days = planned_days[wk] | actual_days.get(wk, set())
         if "max_sessions_per_week" in rails and len(run_days) > rails["max_sessions_per_week"]:
-            warn("guardrail_breach", "critical",
-                 f"Week of {wk.isoformat()} has {len(run_days)} run days; the plan's own "
-                 f"guardrail caps it at {rails['max_sessions_per_week']:.0f}.",
-                 week=wk, data={"run_days": len(run_days), "cap": rails["max_sessions_per_week"]})
+            warn(
+                "guardrail_breach",
+                "critical",
+                f"Week of {wk.isoformat()} has {len(run_days)} run days; the plan's own "
+                f"guardrail caps it at {rails['max_sessions_per_week']:.0f}.",
+                week=wk,
+                data={"run_days": len(run_days), "cap": rails["max_sessions_per_week"]},
+            )
         if "max_weekly_km" in rails and week_km > rails["max_weekly_km"]:
-            warn("guardrail_breach", "critical",
-                 f"Week of {wk.isoformat()} plans {week_km:.0f} km; the plan's own "
-                 f"guardrail caps it at {rails['max_weekly_km']:.0f} km.",
-                 week=wk, data={**data, "cap": rails["max_weekly_km"]}, estimated=week_estimated[wk])
+            warn(
+                "guardrail_breach",
+                "critical",
+                f"Week of {wk.isoformat()} plans {week_km:.0f} km; the plan's own "
+                f"guardrail caps it at {rails['max_weekly_km']:.0f} km.",
+                week=wk,
+                data={**data, "cap": rails["max_weekly_km"]},
+                estimated=week_estimated[wk],
+            )
         if len(run_days) >= 7:
-            warn("no_rest_day", "warn",
-                 f"Week of {wk.isoformat()} has running on all 7 days — no rest day.",
-                 week=wk, data={"run_days": len(run_days)})
+            warn(
+                "no_rest_day",
+                "warn",
+                f"Week of {wk.isoformat()} has running on all 7 days — no rest day.",
+                week=wk,
+                data={"run_days": len(run_days)},
+            )
 
-        summaries.append({
-            "week_start": wk.isoformat(),
-            "planned_km": round(planned_km[wk], 1),
-            "actual_km": round(actual_km.get(wk, 0.0), 1),
-            "total_km": round(week_km, 1),
-            "run_days": len(run_days),
-            "hard_days": sum(1 for d in hard_dates if _monday(d) == wk),
-            "longest_km": round(longest[wk], 1),
-            "baseline_km": round(baseline, 1) if baseline is not None else None,
-            "ratio": ratio,
-            "estimated": week_estimated[wk],
-        })
+        summaries.append(
+            {
+                "week_start": wk.isoformat(),
+                "planned_km": round(planned_km[wk], 1),
+                "actual_km": round(actual_km.get(wk, 0.0), 1),
+                "total_km": round(week_km, 1),
+                "run_days": len(run_days),
+                "hard_days": sum(1 for d in hard_dates if _monday(d) == wk),
+                "longest_km": round(longest[wk], 1),
+                "baseline_km": round(baseline, 1) if baseline is not None else None,
+                "ratio": ratio,
+                "estimated": week_estimated[wk],
+            }
+        )
 
     # ── missing down week: consecutive planned weeks that never back off ──
     streak_start: date | None = None
@@ -349,11 +427,15 @@ def validate_schedule(
         streak_start = streak_start or prev
         rising = total(wk) > total(streak_start) * 1.1
         if streak >= WEEKS_WITHOUT_DOWN and rising and not reported_down:
-            warn("missing_down_week", "warn",
-                 f"Volume climbs from the week of {streak_start.isoformat()} through "
-                 f"{wk.isoformat()} with no recovery week (playbook: cut ~30% every "
-                 "3rd–4th week).",
-                 week=wk, data={"streak_weeks": streak + 1})
+            warn(
+                "missing_down_week",
+                "warn",
+                f"Volume climbs from the week of {streak_start.isoformat()} through "
+                f"{wk.isoformat()} with no recovery week (playbook: cut ~30% every "
+                "3rd–4th week).",
+                week=wk,
+                data={"streak_weeks": streak + 1},
+            )
             reported_down = True
 
     # ── hard-day spacing: consecutive calendar days ──
@@ -365,25 +447,32 @@ def validate_schedule(
         else:
             cluster = [d]
         if len(cluster) == 2:
-            warn("hard_day_spacing", "warn",
-                 f"Hard sessions on consecutive days: {cluster[0].isoformat()} and "
-                 f"{cluster[1].isoformat()}.",
-                 week=_monday(cluster[0]), data={"dates": [x.isoformat() for x in cluster]})
+            warn(
+                "hard_day_spacing",
+                "warn",
+                f"Hard sessions on consecutive days: {cluster[0].isoformat()} and {cluster[1].isoformat()}.",
+                week=_monday(cluster[0]),
+                data={"dates": [x.isoformat() for x in cluster]},
+            )
         elif len(cluster) == 3:
-            warnings[-1].update(severity="critical", message=(
-                f"Three consecutive hard days starting {cluster[0].isoformat()}."))
+            warnings[-1].update(
+                severity="critical", message=(f"Three consecutive hard days starting {cluster[0].isoformat()}.")
+            )
 
     # ── frequency jump vs recent habit ──
-    hist_weeks = [len(days) for wk, days in actual_days.items()
-                  if today - timedelta(weeks=8) <= wk < _monday(today)]
+    hist_weeks = [len(days) for wk, days in actual_days.items() if today - timedelta(weeks=8) <= wk < _monday(today)]
     if len(hist_weeks) >= 3:
         habitual_max = max(hist_weeks)
         for wk in evaluated:
             if len(planned_days[wk]) > habitual_max + FREQUENCY_JUMP:
-                warn("frequency_jump", "warn",
-                     f"Week of {wk.isoformat()} plans {len(planned_days[wk])} run days; "
-                     f"the athlete's recent max is {habitual_max} days/week.",
-                     week=wk, data={"planned_days": len(planned_days[wk]), "recent_max": habitual_max})
+                warn(
+                    "frequency_jump",
+                    "warn",
+                    f"Week of {wk.isoformat()} plans {len(planned_days[wk])} run days; "
+                    f"the athlete's recent max is {habitual_max} days/week.",
+                    week=wk,
+                    data={"planned_days": len(planned_days[wk]), "recent_max": habitual_max},
+                )
                 break  # once is enough — later weeks usually inherit the pattern
 
     # ── taper shape before a declared race ──
@@ -392,40 +481,62 @@ def validate_schedule(
         if pre_race:
             peak = max(total(wk) for wk in evaluated)
             final = pre_race[-1]
-            if _monday(race_date) - final == timedelta(weeks=1) and peak > 0 \
-                    and total(final) > peak * TAPER_FINAL_WEEK_SHARE:
-                warn("no_taper", "warn",
-                     f"Final full week before the race ({final.isoformat()}) holds "
-                     f"{total(final):.0f} km — {total(final) / peak:.0%} of peak. Playbook "
-                     "taper: cut volume 40–60%, keep intensity.",
-                     week=final, data={"final_km": round(total(final), 1), "peak_km": round(peak, 1)})
+            if (
+                _monday(race_date) - final == timedelta(weeks=1)
+                and peak > 0
+                and total(final) > peak * TAPER_FINAL_WEEK_SHARE
+            ):
+                warn(
+                    "no_taper",
+                    "warn",
+                    f"Final full week before the race ({final.isoformat()}) holds "
+                    f"{total(final):.0f} km — {total(final) / peak:.0%} of peak. Playbook "
+                    "taper: cut volume 40–60%, keep intensity.",
+                    week=final,
+                    data={"final_km": round(total(final), 1), "peak_km": round(peak, 1)},
+                )
         for d in ordered_hard:
             if 0 < (race_date - d).days <= 2:
-                warn("hard_near_race", "warn",
-                     f"Hard session on {d.isoformat()}, {(race_date - d).days} day(s) "
-                     "before the race.",
-                     week=_monday(d), data={"date": d.isoformat()})
+                warn(
+                    "hard_near_race",
+                    "warn",
+                    f"Hard session on {d.isoformat()}, {(race_date - d).days} day(s) before the race.",
+                    week=_monday(d),
+                    data={"date": d.isoformat()},
+                )
 
     # ── strength collision: quality run the day after a strength session ──
     for d in ordered_hard:
         if d - timedelta(days=1) in strength_dates:
-            warn("strength_collision", "info",
-                 f"Hard run on {d.isoformat()} directly after the "
-                 f"{(d - timedelta(days=1)).isoformat()} strength session.",
-                 week=_monday(d), data={"date": d.isoformat()})
+            warn(
+                "strength_collision",
+                "info",
+                f"Hard run on {d.isoformat()} directly after the "
+                f"{(d - timedelta(days=1)).isoformat()} strength session.",
+                week=_monday(d),
+                data={"date": d.isoformat()},
+            )
 
     # ── sanity: doubles and past-dated items ──
     seen: set[date] = set()
     for s in sorted(planned, key=lambda x: x.date):
         if s.date in seen:
-            warn("double_day", "info",
-                 f"Two scheduled sessions on {s.date.isoformat()}.",
-                 week=_monday(s.date), data={"date": s.date.isoformat()})
+            warn(
+                "double_day",
+                "info",
+                f"Two scheduled sessions on {s.date.isoformat()}.",
+                week=_monday(s.date),
+                data={"date": s.date.isoformat()},
+            )
         seen.add(s.date)
         if s.date < today:
-            warn("past_scheduled", "info",
-                 f"'{s.title}' is scheduled in the past ({s.date.isoformat()}).",
-                 week=_monday(s.date), data={"date": s.date.isoformat()})
+            warn(
+                "past_scheduled",
+                "info",
+                f"'{s.title}' is scheduled in the past ({s.date.isoformat()}).",
+                week=_monday(s.date),
+                data={"date": s.date.isoformat()},
+            )
 
     warnings.sort(key=lambda w: (_SEVERITY_ORDER[w["severity"]], w["week"] or ""))
     return warnings, summaries
