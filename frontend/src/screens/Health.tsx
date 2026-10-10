@@ -52,7 +52,7 @@ function RecoveryChart({ days }: { days: HealthMetricsDay[] }) {
   const lastHrv = lastOf(hrv)
   // Hooks before the early return: a chart that vanishes when its data does
   // must not change the hook count on the way out.
-  const hover = useChartHover(days.length, 'point')
+  const hover = useChartHover(days.length, 'point', 'Recovery history')
   const hovered = hover.index != null ? days[hover.index] : null
   if (!rhrLine.path && !hrvLine.path) return null
   const px = (i: number) => (days.length > 1 ? (i * W) / (days.length - 1) : W / 2)
@@ -97,7 +97,7 @@ function RecoveryChart({ days }: { days: HealthMetricsDay[] }) {
               fill="var(--orange)" stroke="var(--card-deep)" strokeWidth="2" />
           )}
         </svg>
-        <ChartTooltip index={hover.index} count={days.length} mode="point">
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={days.length} mode="point">
           {hovered && (
             <>
               <span className="tip-date">{fmtDay(hovered.date)}</span>
@@ -168,7 +168,7 @@ function sleepBars(days: HealthMetricsDay[], weekly: boolean): SleepBar[] {
 function SleepChart({ days, range }: { days: HealthMetricsDay[]; range: Range }) {
   const bars = sleepBars(days, range.weekly)
   // Before the early return — the hook count must not depend on the data.
-  const hover = useChartHover(bars.length)
+  const hover = useChartHover(bars.length, 'band', 'Sleep history')
   const hovered = hover.index != null ? bars[hover.index] : null
   if (bars.length === 0) return null
   const W = 480
@@ -212,7 +212,7 @@ function SleepChart({ days, range }: { days: HealthMetricsDay[]; range: Range })
             )
           })}
         </svg>
-        <ChartTooltip index={hover.index} count={bars.length}>
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={bars.length}>
           {hovered && (
             <>
               <span className="tip-date">{hovered.label}</span>
@@ -261,7 +261,7 @@ function WeightChart({ days }: { days: HealthMetricsDay[] }) {
   // on — and then snaps to the nearest day that actually holds a reading.
   // Indexing the weigh-ins directly would space them evenly, which they are
   // not, and the marker would drift off the line it is meant to sit on.
-  const hover = useChartHover(days.length, 'point')
+  const hover = useChartHover(days.length, 'point', 'Weight history')
   const at = hover.index != null ? nearestWeighIn(days, hover.index) : null
   const hovered = at != null ? days[at] : null
   if (present.length < 2) return null
@@ -290,7 +290,7 @@ function WeightChart({ days }: { days: HealthMetricsDay[] }) {
             </>
           )}
         </svg>
-        <ChartTooltip index={at} count={days.length} mode="point">
+        <ChartTooltip id={hover.tooltipId} index={at} count={days.length} mode="point">
           {hovered && (
             <>
               <span className="tip-date">{fmtDay(hovered.date)}</span>
@@ -331,7 +331,7 @@ function stepBars(days: HealthMetricsDay[], weekly: boolean): StepBar[] {
 function StepsChart({ days, range }: { days: HealthMetricsDay[]; range: Range }) {
   const bars = stepBars(days, range.weekly)
   // Before the early return — the hook count must not depend on the data.
-  const hover = useChartHover(bars.length)
+  const hover = useChartHover(bars.length, 'band', 'Steps history')
   const hovered = hover.index != null ? bars[hover.index] : null
   if (bars.length === 0) return null
   const W = 1080
@@ -366,7 +366,7 @@ function StepsChart({ days, range }: { days: HealthMetricsDay[]; range: Range })
             )
           })}
         </svg>
-        <ChartTooltip index={hover.index} count={bars.length}>
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={bars.length}>
           {hovered && (
             <>
               <span className="tip-date">{hovered.label}</span>

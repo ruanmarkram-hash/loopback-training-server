@@ -8,9 +8,10 @@ trainer for the next block" nudge fires when there isn't).
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-TODAY = date.today()
+TODAY = datetime.now(ZoneInfo("Australia/Brisbane")).date()
 
 
 def make_plan(client, name="Base Block", activity="running", start=None, end=None, status=None):
@@ -141,9 +142,7 @@ def test_complete_without_feedback_writes_no_note(client_a):
 
 def test_complete_reports_next_plan_of_same_activity(client_a):
     pid = make_plan(client_a, name="Block 1", end=TODAY)
-    successor = make_plan(
-        client_a, name="Block 2", start=TODAY + timedelta(days=2), end=TODAY + timedelta(days=30)
-    )
+    successor = make_plan(client_a, name="Block 2", start=TODAY + timedelta(days=2), end=TODAY + timedelta(days=30))
     make_plan(  # different activity — must not count as the successor
         client_a, name="Lifting", activity="strength", end=TODAY + timedelta(days=30)
     )
@@ -206,8 +205,8 @@ def test_strength_plan_progress_counts_scheduled_sessions(client_a):
             "id": str(uuid.uuid4()),
             "activityType": "traditionalStrength",
             "source": "com.hevyapp.hevy",
-            "startDate": (TODAY - timedelta(days=14)).isoformat() + "T18:00:00+00:00",
-            "endDate": (TODAY - timedelta(days=14)).isoformat() + "T19:00:00+00:00",
+            "startDate": (TODAY - timedelta(days=14)).isoformat() + "T18:00:00+10:00",
+            "endDate": (TODAY - timedelta(days=14)).isoformat() + "T19:00:00+10:00",
             "duration": 3600,
         },
     )

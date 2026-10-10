@@ -44,7 +44,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   if (change.isSuccess) {
     const revoked = change.data.revokedTokens
     return (
-      <Modal onClose={onClose} width={420}>
+      <Modal label="Password changed" onClose={onClose} width={420}>
         <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
           Password changed
         </div>
@@ -61,7 +61,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal onClose={onClose} width={420}>
+    <Modal label="Change password" closeDisabled={change.isPending} onClose={onClose} width={420}>
       <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
         Change password
       </div>
@@ -71,6 +71,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
       <div className="field-label">Current password</div>
       <input
+              aria-label="Current password"
         className="field-input"
         style={{ marginBottom: 14 }}
         type="password"
@@ -82,6 +83,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
       <div className="field-label">New password (min {MIN_PASSWORD} characters)</div>
       <input
+              aria-label="New password"
         className="field-input"
         style={{ marginBottom: 14 }}
         type="password"
@@ -92,6 +94,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
       <div className="field-label">Confirm new password</div>
       <input
+              aria-label="Confirm new password"
         className="field-input"
         type="password"
         autoComplete="new-password"
@@ -109,7 +112,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-        <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+        <button className="btn-ghost" style={{ flex: 1 }} disabled={change.isPending} onClick={onClose}>
           Cancel
         </button>
         <button
@@ -137,6 +140,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [expiryDays, setExpiryDays] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState('')
 
   const submit = () => {
     const expiresAt =
@@ -146,7 +150,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
 
   if (mint.isSuccess) {
     return (
-      <Modal onClose={onClose} width={460}>
+      <Modal label="Token created" onClose={onClose} width={460}>
         <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
           Token created
         </div>
@@ -157,16 +161,22 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
         <div className="cli-box" style={{ marginTop: 0, wordBreak: 'break-all', whiteSpace: 'pre-wrap', userSelect: 'all' }}>
           {mint.data.token}
         </div>
+        {copyError && <p role="alert">{copyError}</p>}
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-          <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+          <button className="btn-ghost" style={{ flex: 1 }} disabled={mint.isPending} onClick={onClose}>
             Done
           </button>
           <button
             className="btn-accent"
             style={{ flex: 1 }}
-            onClick={() => {
-              void navigator.clipboard?.writeText(mint.data.token)
-              setCopied(true)
+            onClick={async () => {
+              setCopied(false)
+              setCopyError('')
+              try {
+                if (!navigator.clipboard) throw new Error('Clipboard unavailable')
+                await navigator.clipboard.writeText(mint.data.token)
+                setCopied(true)
+              } catch { setCopyError('Could not copy the token. Select and copy it manually, or try again.') }
             }}
           >
             {copied ? <Check size={15} weight="bold" /> : <Copy size={15} />}
@@ -178,7 +188,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal onClose={onClose} width={460}>
+    <Modal label="Create token" closeDisabled={mint.isPending} onClose={onClose} width={460}>
       <div className="display" style={{ fontSize: 20, fontWeight: 600 }}>
         New token
       </div>
@@ -188,6 +198,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
 
       <div className="field-label">Name</div>
       <input
+              aria-label="Token name"
         className="field-input"
         style={{ marginBottom: 14 }}
         placeholder="Coach MCP"
@@ -197,7 +208,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
       />
 
       <div className="field-label">Expires</div>
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div className="choice-grid">
         {EXPIRY_CHOICES.map((c) => (
           <button
             key={c.label}
@@ -217,7 +228,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-        <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+        <button className="btn-ghost" style={{ flex: 1 }} disabled={mint.isPending} onClick={onClose}>
           Cancel
         </button>
         <button className="btn-accent" style={{ flex: 1 }} disabled={!name.trim() || mint.isPending} onClick={submit}>
@@ -327,7 +338,8 @@ export function Settings() {
           body="The device using this token stops authenticating immediately. It can be re-added by logging in again on that device."
           confirmLabel="Revoke"
           busy={revoke.isPending}
-          onCancel={() => setRevoking(null)}
+          error={revoke.error}
+          onCancel={() => { revoke.reset(); setRevoking(null) }}
           onConfirm={() =>
             revoke.mutate(revoking.id, {
               onSuccess: () => setRevoking(null),

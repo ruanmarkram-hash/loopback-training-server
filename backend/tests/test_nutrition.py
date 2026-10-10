@@ -617,16 +617,40 @@ def test_summary_endpoint_exposes_expenditure(client_a):
     assert exp["balance_kcal_avg"] == -500
 
 
-def test_summary_endpoint_excludes_today_from_expenditure(client_a):
-    """Today's row is mid-day by construction; it must not drag the average."""
-    today = date.today()
-    client_a.post(METRICS, json={"metrics": [
+@pytest.mark.parametrize("selected_zone", [None, "Australia/Brisbane", "America/Los_Angeles"])
+def test_summary_endpoint_excludes_today_from_expenditure(client_a, monkeypatch, selected_zone):
+    """The selected calendar's current day is incomplete regardless of process TZ."""
+    from zoneinfo import ZoneInfo
+
+    from app.routes import nutrition
+
+    instant = datetime(2026, 10, 8, 22, tzinfo=timezone.utc)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    monkeypatch.setattr(nutrition, "datetime", Clock)
+    zone = ZoneInfo(selected_zone) if selected_zone else timezone.utc
+    today = instant.astimezone(zone).date()
+    yesterday = today - timedelta(days=1)
+    assert client_a.post(METRICS, json={"metrics": [
         {"date": today.isoformat(), "active_energy_burned": 90, "basal_energy_burned": 200},
-    ]})
-    body = client_a.get(
-        f"{BASE}/summary?start_date={today.isoformat()}&period=week"
-    ).json()
+        {"date": yesterday.isoformat(), "active_energy_burned": 500, "basal_energy_burned": 1500},
+    ]}).status_code == 200
+    params = {"start_date": today.isoformat(), "period": "week"}
+    if selected_zone:
+        params["timezone"] = selected_zone
+    response = client_a.get(f"{BASE}/summary", params=params)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["end_date"] == today.isoformat()
     assert all(p["expenditure"]["days_with_energy"] == 0 for p in body["periods"])
+    params["start_date"] = yesterday.isoformat()
+    complete = client_a.get(f"{BASE}/summary", params=params)
+    assert complete.status_code == 200, complete.text
+    assert sum(p["expenditure"]["days_with_energy"] for p in complete.json()["periods"]) == 1
 
 
 # ── weight trend ────────────────────────────────────────────────────────────

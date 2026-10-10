@@ -118,15 +118,9 @@ def test_cross_user_workout_context_404s(client_a, client_b):
     assert client_b.get(f"/api/workouts/{wid}/context").status_code == 404
 
 
-def test_link_to_another_users_queue_item_resolves_null(client_a, client_b):
-    # A workout may arrive claiming any plan_workout_id; the joins are
-    # user-scoped, so pointing at B's queue item must yield no context.
+def test_link_to_another_users_queue_item_is_rejected_at_ingestion(client_a, client_b):
     other_qid = make_queue_item(client_b)
-    file_skip_feedback(client_b, other_qid)
-    wid = make_workout(client_a, plan_workout_id=other_qid)
-
-    ctx = get_context(client_a, wid)
-    assert ctx["plan_workout_id"] == other_qid
-    assert ctx["queue_item"] is None
-    assert ctx["plan"] is None
-    assert ctx["feedback"] is None
+    r = client_a.post("/api/workouts", json={"id": str(uuid.uuid4()), "activityType": "running", "startDate": TS, "endDate": "2026-07-20T08:45:00+00:00", "planWorkoutId": other_qid})
+    assert r.status_code == 404
+    assert client_a.get("/api/workouts").json() == []
+    assert client_b.get("/api/queue").json()[0]["id"] == other_qid

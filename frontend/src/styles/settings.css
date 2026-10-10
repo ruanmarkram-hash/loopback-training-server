@@ -144,6 +144,13 @@
   border-top: 1px solid rgba(245, 235, 220, 0.05);
   padding: 15px 20px;
 }
+.u-member {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.u-member .avatar-lg {
+  flex-shrink: 0;
+}
 .cli-box {
   margin-top: 14px;
   border-radius: 14px;
@@ -168,4 +175,14 @@
   .users-table .hide-sm {
     display: none;
   }
+}
+
+@media (max-width: 420px) {
+  .users-table .u-head, .users-table .u-row {
+    grid-template-columns: minmax(0, 1fr) 40px 56px;
+    gap: 8px;
+    padding: 13px 12px;
+  }
+  .users-table .u-head > :last-child { display: none; }
+  .u-actions { grid-column: 1 / -1; }
 }

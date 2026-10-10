@@ -3,7 +3,8 @@
  * thin grid lines, rounded line paths, soft area fills, rounded bars.
  * All charts use viewBox + preserveAspectRatio="none" and scale to width.
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import '../styles/charts-accessibility.css'
 
 export interface Pt {
   x: number
@@ -27,25 +28,44 @@ export type HoverMode =
 
 export interface ChartHover {
   index: number | null
-  bind: {
-    onPointerMove: (e: React.PointerEvent<HTMLElement>) => void
-    onPointerLeave: () => void
-  }
+  tooltipId: string
+  bind: React.HTMLAttributes<HTMLElement>
 }
 
-export function useChartHover(count: number, mode: HoverMode = 'band'): ChartHover {
+export function useChartHover(count: number, mode: HoverMode = 'band', label = 'Recorded chart'): ChartHover {
   const [index, setIndex] = useState<number | null>(null)
+  const tooltipId = useId()
+  const selected = index != null && index < count ? index : null
+  const resolvePointer = (event: React.PointerEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (count <= 0 || rect.width <= 0) return
+    const fraction = (event.clientX - rect.left) / rect.width
+    const raw = mode === 'band' ? Math.floor(fraction * count) : Math.round(fraction * (count - 1))
+    setIndex(Math.max(0, Math.min(count - 1, raw)))
+  }
   return {
-    index: index != null && index < count ? index : null,
+    index: selected,
+    tooltipId,
     bind: {
-      onPointerMove: (e) => {
-        const rect = e.currentTarget.getBoundingClientRect()
-        if (count <= 0 || rect.width <= 0) return
-        const f = (e.clientX - rect.left) / rect.width
-        const raw = mode === 'band' ? Math.floor(f * count) : Math.round(f * (count - 1))
-        setIndex(Math.max(0, Math.min(count - 1, raw)))
+      role: 'group',
+      tabIndex: count > 0 ? 0 : -1,
+      'aria-label': label,
+      'aria-description': 'Use left and right arrows, Home or End to inspect recorded values. Escape clears the selection.',
+      'aria-describedby': selected != null ? tooltipId : undefined,
+      onPointerMove: resolvePointer,
+      onPointerDown: (event) => { event.currentTarget.focus({ preventScroll: true }); resolvePointer(event) },
+      onPointerLeave: (event) => { if (event.pointerType !== 'touch') setIndex(null) },
+      onFocus: () => { if (count > 0) setIndex(0) },
+      onBlur: () => setIndex(null),
+      onKeyDown: (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return
+        event.preventDefault()
+        if (event.key === 'Escape') { setIndex(null); return }
+        if (count <= 0) return
+        if (event.key === 'Home') setIndex(0)
+        else if (event.key === 'End') setIndex(count - 1)
+        else setIndex(Math.max(0, Math.min(count - 1, (selected ?? 0) + (event.key === 'ArrowRight' ? 1 : -1))))
       },
-      onPointerLeave: () => setIndex(null),
     },
   }
 }
@@ -72,11 +92,13 @@ export function hoverFraction(index: number, count: number, mode: HoverMode = 'b
  * which is also what `bind` should be spread onto.
  */
 export function ChartTooltip({
+  id,
   index,
   count,
   mode = 'band',
   children,
 }: {
+  id?: string
   index: number | null
   count: number
   mode?: HoverMode
@@ -85,7 +107,7 @@ export function ChartTooltip({
   if (index == null) return null
   const side = hoverFraction(index, count, mode) < 0.5 ? 'right' : 'left'
   return (
-    <div className="chart-tip" data-side={side}>
+    <div id={id} role="tooltip" className="chart-tip" data-side={side}>
       {children}
     </div>
   )

@@ -66,8 +66,8 @@ def test_skip_never_downgrades_completed(client_a):
 
 def test_cross_user_skip_cannot_touch_others_queue(client_a, client_b):
     qid = queue_item(client_a)
-    # B may file feedback naming A's queue id, but A's item must be untouched.
-    assert client_b.post("/api/workouts/feedback", json=skip_payload(qid)).status_code == 201
+    # A foreign logical queue identity is rejected without touching either account.
+    assert client_b.post("/api/workouts/feedback", json=skip_payload(qid)).status_code == 404
     assert get_status(client_a, qid) == "pending"
 
 

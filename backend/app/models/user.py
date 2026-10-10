@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, String, Text, func, text
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -38,6 +38,9 @@ class User(Base):
     # `updated` answers "when did the choice last change?".
     data_consent_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     data_consent_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Server-derived observation pointer/semantic transition, never athlete profile facts.
+    activity_observation_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     tokens: Mapped[list["ApiToken"]] = relationship(  # noqa: F821
         "ApiToken", back_populates="user", cascade="all, delete-orphan"

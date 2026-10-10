@@ -110,14 +110,18 @@ def test_edit_ack_survives_missing_queue_item(client_a):
     aid = action(client_a, qid)
     assert client_a.delete(f"/api/queue/{qid}").status_code == 204
     assert client_a.delete(f"/api/workouts/actions/{aid}").status_code == 200
-    assert client_a.get("/api/workouts/actions").json() == []
+    retire=client_a.get('/api/workouts/actions').json()
+    assert len(retire)==1 and retire[0]['action']=='delete' and retire[0]['workoutId']==qid
+    assert client_a.delete('/api/workouts/actions/'+retire[0]['id']).json()['applied'] is True
+    assert client_a.get('/api/workouts/actions').json()==[]
 
 
 def test_edit_ack_never_writes_another_users_queue_item(client_a, client_b):
     qid = queue_item(client_b)
-    # A's action pointing at B's queue item: acking must not touch B's row.
-    aid = action(client_a, qid)
-    assert client_a.delete(f"/api/workouts/actions/{aid}").status_code == 200
+    # Reject the foreign link at creation, before an action can reach a device.
+    r = client_a.post("/api/workouts/actions", json={"workoutId": qid, "action": "edit", "composition": NEW_COMP})
+    assert r.status_code == 404
+    assert client_a.get("/api/workouts/actions").json() == []
     assert get_item(client_b, qid)["workout_data"] == OLD_COMP
 
 

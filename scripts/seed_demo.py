@@ -515,7 +515,7 @@ def main() -> None:
 
     strength_plan = api.req("POST", "/api/plans", {
         "name": "Strength × run support",
-        "activityType": "traditionalStrength",
+        "activityType": "strength",
         "status": "active",
         "startDate": (monday0 - timedelta(weeks=8)).isoformat(),
         "endDate": (monday0 + timedelta(weeks=4) - timedelta(days=1)).isoformat(),

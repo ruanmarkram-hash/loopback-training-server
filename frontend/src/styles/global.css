@@ -390,3 +390,16 @@ a:focus-visible {
   background: var(--card-deep) !important;
   font-family: var(--font-mono);
 }
+
+/* Native calendar controls follow the application's dark surfaces. */
+.field-input:is([type=date],[type=datetime-local],[type=time]) { color-scheme:dark; }
+.filter-chip, .seg-toggle button { min-height:44px; min-width:44px; }
+.seg-toggle { flex-wrap:wrap; max-width:100%; }
+.form-columns { display:flex; gap:12px; }
+.form-columns > div { min-width:0; }
+.choice-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+.choice-grid .filter-chip { min-width:0; padding-inline:8px; }
+@media(max-width:600px) {
+ .form-columns { flex-direction:column; }
+ .choice-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}

@@ -20,4 +20,6 @@ class ActionRead(BaseModel):
     workout_id: uuid.UUID = Field(serialization_alias="workoutId")
     action: str
     composition: dict | None
+    base_prescription_revision: uuid.UUID | None = Field(default=None,serialization_alias="basePrescriptionRevision")
+    desired_prescription_revision: uuid.UUID | None = Field(default=None,alias="prescriptionRevision")
     created_at: datetime

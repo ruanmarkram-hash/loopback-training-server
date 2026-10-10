@@ -65,7 +65,7 @@ function HrTrace({ samples }: { samples: TimedSample[] }) {
   const bands = useMemo(() => zoneBands(min, max, W, H), [min, max])
   const avg = Math.round(samples.reduce((a, s) => a + s.value, 0) / samples.length)
   const peak = Math.round(Math.max(...samples.map((s) => s.value)))
-  const hover = useChartHover(values.length, 'point')
+  const hover = useChartHover(values.length, 'point', 'Heart rate trace')
   const px = (i: number) => (values.length > 1 ? (i * W) / (values.length - 1) : W / 2)
   const bpm = hover.index != null ? values[hover.index] : null
   const elapsed = hover.index != null ? bucketElapsed(samples, hover.index, values.length) : null
@@ -100,7 +100,7 @@ function HrTrace({ samples }: { samples: TimedSample[] }) {
             </>
           )}
         </svg>
-        <ChartTooltip index={hover.index} count={values.length} mode="point">
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={values.length} mode="point">
           {bpm != null && (
             <>
               {elapsed != null && <span className="tip-date">{fmtDuration(elapsed)} in</span>}
@@ -388,7 +388,7 @@ function Splits({ splits }: { splits: WorkoutSplit[] }) {
 function CadenceChart({ samples }: { samples: TimedSample[] }) {
   const values = useMemo(() => downsample(samples.map((s) => s.value), 26), [samples])
   // Before the early return — the hook count must not depend on the data.
-  const hover = useChartHover(values.length)
+  const hover = useChartHover(values.length, 'band', 'Running cadence')
   if (values.length === 0) return null
   const avg = Math.round(samples.reduce((a, s) => a + s.value, 0) / samples.length)
   const W = 560
@@ -428,7 +428,7 @@ function CadenceChart({ samples }: { samples: TimedSample[] }) {
             )
           })}
         </svg>
-        <ChartTooltip index={hover.index} count={values.length}>
+        <ChartTooltip id={hover.tooltipId} index={hover.index} count={values.length}>
           {spm != null && (
             <>
               {elapsed != null && <span className="tip-date">{fmtDuration(elapsed)} in</span>}
@@ -615,6 +615,7 @@ export function WorkoutDetail() {
           body="This permanently removes the workout and all its samples from the server. The copy in Apple Health is not affected."
           confirmLabel="Delete"
           busy={deleteWorkout.isPending}
+          error={deleteWorkout.error}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
             deleteWorkout.mutate(workout.id, {

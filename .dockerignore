@@ -10,3 +10,12 @@ backend/__pycache__
 **/.pytest_cache
 **/*.pyc
 backend/config/.env
+
+# Browser credentials and generated QA output never belong in an app image.
+frontend/.auth
+frontend/test-results
+frontend/playwright-report
+frontend/blob-report
+**/.env
+**/.env.*
+!**/.env.example

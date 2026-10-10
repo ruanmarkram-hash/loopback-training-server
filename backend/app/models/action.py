@@ -17,5 +17,7 @@ class WorkoutAction(Base):
     )
     workout_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
+    base_prescription_revision: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    desired_prescription_revision: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     composition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

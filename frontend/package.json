@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "qa:inventory": "node tests/e2e/source-inventory.mjs"
   },
   "dependencies": {
     "@fontsource/hanken-grotesk": "^5.2.8",
@@ -18,10 +20,11 @@
     "leaflet": "^1.9.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1"
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.0-rc.4",
+    "@babel/core": "^8.0.7",
+    "@playwright/test": "^1.64.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@types/babel__core": "^7.20.5",
     "@types/leaflet": "^1.9.21",

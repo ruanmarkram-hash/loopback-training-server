@@ -19,7 +19,7 @@ from sqlalchemy import delete, func, inspect, select, text
 
 from app.auth import CurrentAdmin, get_current_admin
 from app.auth_events import record_auth_event
-from app.backup import BackupError, run_backup
+from app.backup import BackupError, _dump_records, run_backup
 from app.config import get_settings
 from app.data_consent import DEFAULT_DOMAINS
 from app.database import DbSession
@@ -302,11 +302,10 @@ def system_status(db: DbSession) -> SystemStatus:
     backup_count = 0
     backup_dir = Path(get_settings().backup_dir)
     if backup_dir.is_dir():
-        dumps = sorted(backup_dir.glob("training-api-*.sql.gz"))
+        dumps = _dump_records(backup_dir)
         backup_count = len(dumps)
         if dumps:
-            latest = dumps[-1]  # timestamped names sort chronologically
-            stat = latest.stat()
+            latest, stat = dumps[-1]
             backup = BackupStatus(
                 file=latest.name,
                 size_bytes=stat.st_size,

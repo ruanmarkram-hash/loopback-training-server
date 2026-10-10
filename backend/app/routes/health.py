@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter
 from sqlalchemy import text
 
@@ -19,4 +20,6 @@ def health(db: DbSession):
         "service": "training-api",
         "version": __version__,
         "database": db_status,
+        "source_revision": os.environ.get("SOURCE_REVISION", "unknown"),
+        "source_tree_hash": os.environ.get("SOURCE_TREE_HASH", "unknown"),
     }

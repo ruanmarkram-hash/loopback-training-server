@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Layout } from './components/Layout'
 import { PageHeaderProvider } from './components/PageHeader'
 import { AuthProvider, useAuth } from './lib/auth'
+import { Coach } from './screens/Coach'
 import { Calendar } from './screens/Calendar'
 import { Health } from './screens/Health'
 import { Login } from './screens/Login'
@@ -51,6 +52,7 @@ export default function App() {
                 <Route path="/workouts/:id" element={<WorkoutDetail />} />
                 <Route path="/plans" element={<Plans />} />
                 <Route path="/plans/:id" element={<PlanDetail />} />
+                <Route path="/coach" element={<Coach />} />
                 <Route path="/notes" element={<Notes />} />
                 <Route path="/health" element={<Health />} />
                 <Route path="/queue" element={<Queue />} />

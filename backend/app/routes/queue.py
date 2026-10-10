@@ -3,10 +3,14 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
+from app.models.coaching import PrescriptionRevision
 
 from app.auth import CurrentUser
 from app.database import DbSession
 from app.models.queue import WorkoutQueue
+from app.models.action import WorkoutAction
+from app.coaching_service import lock_athlete
 from app.schemas.queue import (
     QueueBatchCreatedResponse,
     QueueItemCreate,
@@ -150,6 +154,8 @@ def update_queue_status(item_id: uuid.UUID, payload: QueueStatusUpdate, db: DbSe
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_queue_item(item_id: uuid.UUID, db: DbSession, user: CurrentUser):
     item = get_owned(db, WorkoutQueue, item_id, user)
+    lock_athlete(db,user.id)
+    if item.status!='completed':db.add(WorkoutAction(id=uuid.uuid4(),user_id=user.id,workout_id=item.id,action='delete',base_prescription_revision=item.prescription_revision))
     db.delete(item)
     db.commit()
 
@@ -165,6 +171,11 @@ def _as_composition(item: WorkoutQueue) -> dict:
     composition = dict(item.workout_data or {})
     # Use the queue item's ID so the app can DELETE /api/workouts/queue/{id}
     composition["id"] = str(item.id)
+    db=object_session(item)
+    revision=db.get(PrescriptionRevision,item.prescription_revision) if db and item.prescription_revision else None
+    if revision:
+        composition["prescriptionRevision"] = str(revision.id)
+        composition["contentHash"] = revision.content_hash
     return composition
 
 

@@ -13,7 +13,7 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePageHeader } from '../components/PageHeader'
 import { FinishBanners } from '../components/PlanCelebration'
-import { ConflictPill, IconTile, SectionLabel, StatusPill } from '../components/ui'
+import { ConflictPill, ErrorNote, Loading, IconTile, SectionLabel, StatusPill } from '../components/ui'
 import { activityMeta, effortColor } from '../lib/activity'
 import { useAuth } from '../lib/auth'
 import {
@@ -166,7 +166,7 @@ function NextUp() {
 
 function RecentWorkouts() {
   const navigate = useNavigate()
-  const { data, isSuccess } = useWorkouts({ limit: 5 })
+  const { data, isSuccess, isLoading, isFetching, error, refetch } = useWorkouts({ limit: 5 })
 
   return (
     <div className="card" style={{ overflow: 'hidden' }}>
@@ -176,6 +176,8 @@ function RecentWorkouts() {
           All →
         </button>
       </div>
+      {isLoading && <Loading label="Loading recent workouts…" />}
+      {error && <div><ErrorNote error={error} /><button className="btn-ghost" disabled={isFetching} onClick={()=>void refetch()}>Retry recent workouts</button></div>}
       {isSuccess && data.length === 0 && (
         <div style={{ padding: '6px 20px 20px', fontSize: 13, color: 'var(--muted)' }}>
           No workouts yet. Install the iOS app and log in — synced sessions land here.
@@ -190,7 +192,7 @@ function RecentWorkouts() {
           pace ? `${fmtPace(pace)}/km` : null,
         ].filter(Boolean)
         return (
-          <button className="row-item" key={w.id} onClick={() => navigate(`/workouts/${w.id}`)}>
+          <button className="row-item" data-workout-id={w.id} key={w.id} onClick={() => navigate(`/workouts/${w.id}`)}>
             <IconTile icon={meta.icon} color={meta.color} size={38} iconSize={20} />
             <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
               <div className="row-title" style={{ fontSize: 14.5 }}>

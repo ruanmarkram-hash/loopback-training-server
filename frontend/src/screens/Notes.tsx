@@ -23,7 +23,7 @@ import {
   Modal,
 } from '../components/ui'
 import { NOTE_KINDS } from '../lib/activity'
-import { fmtDay, fmtDayYear } from '../lib/format'
+import { fmtDay, fmtDayYear, toDateKey } from '../lib/format'
 import { useDeleteNote, useNoteContext, usePlanNotes, useUpdateNote } from '../lib/queries'
 import type { NoteKind, PlanNote } from '../lib/types'
 import '../styles/notes.css'
@@ -47,7 +47,7 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
   const [importance, setImportance] = useState(note.importance)
   const [summary, setSummary] = useState(note.summary)
   const [body, setBody] = useState(note.body ?? '')
-  const [expiresAt, setExpiresAt] = useState(note.expiresAt ? note.expiresAt.slice(0, 10) : '')
+  const [expiresAt, setExpiresAt] = useState(note.expiresAt ? toDateKey(new Date(note.expiresAt)) : '')
 
   const save = () => {
     update.mutate(
@@ -66,7 +66,7 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
   }
 
   return (
-    <Modal onClose={onClose} width={460}>
+    <Modal label="Edit note" closeDisabled={update.isPending} onClose={onClose} width={460}>
       <div className="display" style={{ fontSize: 19, fontWeight: 600 }}>
         Edit note
       </div>
@@ -90,6 +90,7 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
 
       <div className="field-label">Summary · {280 - summary.length} left</div>
       <textarea
+              aria-label="Summary"
         className="field-input"
         style={{ marginBottom: 14, resize: 'vertical', minHeight: 60 }}
         maxLength={280}
@@ -99,13 +100,14 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
 
       <div className="field-label">Body (optional)</div>
       <textarea
+              aria-label="Body (optional)"
         className="field-input"
         style={{ marginBottom: 14, resize: 'vertical', minHeight: 80 }}
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 22 }}>
+      <div className="form-columns" style={{ marginBottom: 22 }}>
         <div style={{ flex: 1 }}>
           <div className="field-label">Importance</div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -124,6 +126,7 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
         <div style={{ flex: 1 }}>
           <div className="field-label">Expires (optional)</div>
           <input
+              aria-label="Expires (optional)"
             type="date"
             className="field-input"
             value={expiresAt}
@@ -139,7 +142,7 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
       )}
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <button className="btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+        <button className="btn-ghost" style={{ flex: 1 }} disabled={update.isPending} onClick={onClose}>
           Cancel
         </button>
         <button
@@ -156,7 +159,8 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
 }
 
 function CoachPanel() {
-  const { data, isLoading } = useNoteContext()
+  const { data, isLoading, isFetching, error, refetch } = useNoteContext()
+  if (error) return <div className="coach-panel"><ErrorNote error={error} /><button className="btn-ghost" disabled={isFetching} onClick={()=>void refetch()}>Retry note context</button></div>
   if (isLoading || !data) {
     return (
       <div className="coach-panel">
@@ -289,6 +293,7 @@ export function Notes() {
               return (
                 <div
                   className={`note-card${expired ? ' expired' : ''}`}
+                  data-note-id={n.id}
                   key={n.id}
                   style={{
                     borderColor: expired
@@ -357,7 +362,8 @@ export function Notes() {
           }
           confirmLabel="Delete"
           busy={deleteNote.isPending}
-          onCancel={() => setDeleting(null)}
+          error={deleteNote.error}
+          onCancel={() => { deleteNote.reset(); setDeleting(null) }}
           onConfirm={() =>
             deleteNote.mutate(deleting.id, {
               onSuccess: () => setDeleting(null),

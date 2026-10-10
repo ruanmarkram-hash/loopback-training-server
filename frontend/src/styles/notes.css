@@ -9,7 +9,7 @@
     grid-template-columns: 1fr;
   }
   .coach-panel {
-    position: static !important;
+    position: relative !important;
   }
 }
 

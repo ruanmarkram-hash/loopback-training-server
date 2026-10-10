@@ -127,3 +127,31 @@ def client_a(user_a):
 @pytest.fixture()
 def client_b(user_b):
     return _client(user_b[1])
+
+
+@pytest.fixture
+def freeze_coaching_clock(monkeypatch):
+    """Pin the clocks that govern proposal approval and forecast publication."""
+    import importlib
+    from datetime import datetime
+
+    def freeze(at, *fixture_modules):
+        class ClockType(type):
+            def __instancecheck__(cls, value):
+                return isinstance(value, datetime)
+
+        class Clock(datetime, metaclass=ClockType):
+            @classmethod
+            def now(cls, tz=None):
+                return at.astimezone(tz) if tz else at.replace(tzinfo=None)
+
+        for name in (
+            "app.routes.coaching",
+            "app.coaching_scheduler",
+            "app.coaching_program",
+            "app.coaching_structural",
+            *fixture_modules,
+        ):
+            monkeypatch.setattr(importlib.import_module(name), "datetime", Clock)
+
+    return freeze

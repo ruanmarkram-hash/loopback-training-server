@@ -105,7 +105,7 @@ export function Workouts() {
             const meta = activityMeta(w.activity_type)
             const src = sourceMeta(w.source)
             return (
-              <button className="wo-row" key={w.id} onClick={() => navigate(`/workouts/${w.id}`)}>
+              <button className="wo-row" data-workout-id={w.id} key={w.id} onClick={() => navigate(`/workouts/${w.id}`)}>
                 <span className="wo-activity">
                   <span className="icon-tile" style={{ width: 36, height: 36, color: meta.color }}>
                     <meta.icon size={19} />

@@ -28,7 +28,7 @@ function PlanCard({ plan }: { plan: Plan }) {
   const range = `${fmtDay(plan.start_date)} — ${plan.end_date ? fmtDay(plan.end_date) : 'open'}`
 
   return (
-    <button className={`plan-card${active ? ' active' : ''}`} onClick={() => navigate(`/plans/${plan.id}`)}>
+    <button data-plan-id={plan.id} className={`plan-card${active ? ' active' : ''}`} onClick={() => navigate(`/plans/${plan.id}`)}>
       {active && <span className="pc-glow" />}
       <div className="pc-top">
         <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>

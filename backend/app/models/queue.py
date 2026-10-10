@@ -20,6 +20,7 @@ class WorkoutQueue(Base):
     plan_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("plans.id", ondelete="SET NULL"), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     workout_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    prescription_revision: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50), index=True, default="pending")
     scheduled_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

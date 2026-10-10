@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -29,12 +29,15 @@ class PlanProgress(BaseModel):
     runs_completed: int = 0
     runs_skipped: int = 0
     runs_remaining: int = 0
+    runs_retired: int = Field(default=0, exclude_if=lambda value: value == 0)
+    _forecast_known: bool = PrivateAttr(default=True)
 
 
 class PlanRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: uuid.UUID
+    revision: int = 1
     name: str
     activity_type: str
     status: str
