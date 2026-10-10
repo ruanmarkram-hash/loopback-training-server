@@ -125,14 +125,20 @@ def test_dump_connection_preserves_libpq_options_without_password_arguments(back
         observed.update(command=command, env=kwargs['env'])
         return real_popen(command, **kwargs)
     settings = backup_settings()
-    backup_settings(database_url=settings.db_uri + '?sslmode=prefer&application_name=backup_fixture&options=-c%20statement_timeout%3D10000')
+    settings = backup_settings(database_url=settings.db_uri + '?sslmode=prefer&application_name=backup_fixture&options=-c%20statement_timeout%3D10000')
     monkeypatch.setattr(backup_module.subprocess, 'Popen', record)
     run_backup('connection option fixture')
-    from psycopg.conninfo import conninfo_to_dict
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    expected_connection = conninfo_to_dict(_pg_uri(settings.db_uri))
+    expected_password = expected_connection.pop('password')
     connection = conninfo_to_dict(observed['command'][observed['command'].index('--dbname') + 1])
     assert connection['sslmode'] == 'prefer'
     assert connection['application_name'] == 'backup_fixture'
     assert connection['options'] == '-c statement_timeout=10000'
     assert 'password' not in connection
-    assert observed['env']['PGPASSWORD']
-    assert observed['env']['PGPASSWORD'] not in str(observed['command'])
+    assert expected_password
+    assert observed['env']['PGPASSWORD'] == expected_password
+    # CI legitimately uses 'postgres' for both password and username. Compare
+    # the entire password-free argument list, rather than rejecting that text
+    # when it occurs in a public connection field. No extra secret argument fits.
+    assert observed['command'] == ['pg_dump', '--dbname', make_conninfo(**expected_connection)]
