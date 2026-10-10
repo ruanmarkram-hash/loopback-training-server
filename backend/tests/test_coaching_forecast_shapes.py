@@ -279,13 +279,18 @@ def test_noncanonical_past_date_never_enters_complete_remaining_explanation(
     "malformation", ["past_date", "protected_duration", "missing_type", "unsupported_type", "nonstring_type"]
 )
 def test_rebuild_malformed_immutable_calendar_or_dose_is_controlled(
-    client_a, monkeypatch, session_factory, user_a, malformation
+    client_a, monkeypatch, session_factory, user_a, malformation, freeze_coaching_clock
 ):
     from fastapi.testclient import TestClient
 
     from app.main import app
     from tests.test_coaching_review_scope import rebuild_fixture
 
+    # Friday noon UTC remains Friday after five weeks, placing the issued
+    # Saturday 07:00 Brisbane session inside the following 24-hour horizon.
+    base = datetime(2026, 10, 9, 12, tzinfo=UTC)
+    helper_module = rebuild_fixture.__globals__["approved_program"].__module__
+    freeze_coaching_clock(base, helper_module)
     current, pid, body = rebuild_fixture(client_a, monkeypatch, session_factory, user_a)
     metadata = client_a.get("/api/plans/" + pid).json()["metadata"]
     if malformation == "past_date":

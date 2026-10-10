@@ -210,17 +210,9 @@ def test_same_activity_reimport_does_not_trigger_duplicate_review(client_a):
     assert client_a.get("/api/coaching/status").json()["metrics"]["actual_distance_meters"] == 5000
 
 
-def test_program_is_forecast_until_approved_and_missing_ability_is_not_invented(client_a, monkeypatch):
-    import app.routes.coaching as routes
-
+def test_program_is_forecast_until_approved_and_missing_ability_is_not_invented(client_a, freeze_coaching_clock):
     now = datetime(2026, 10, 8, 12, tzinfo=timezone.utc)
-
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
-
-    monkeypatch.setattr(routes, "datetime", Clock)
+    freeze_coaching_clock(now)
     body = {
         "goal": {"type": "10k", "race_date": (now + timedelta(weeks=12)).date().isoformat()},
         "available_days": ["mon", "wed", "sat"],
