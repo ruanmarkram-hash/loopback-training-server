@@ -136,7 +136,11 @@ def freeze_coaching_clock(monkeypatch):
     from datetime import datetime
 
     def freeze(at, *fixture_modules):
-        class Clock(datetime):
+        class ClockType(type):
+            def __instancecheck__(cls, value):
+                return isinstance(value, datetime)
+
+        class Clock(datetime, metaclass=ClockType):
             @classmethod
             def now(cls, tz=None):
                 return at.astimezone(tz) if tz else at.replace(tzinfo=None)

@@ -316,6 +316,20 @@ def test_rebuild_malformed_immutable_calendar_or_dose_is_controlled(
     assert client_a.get("/api/plans/" + pid).json()["metadata"] == metadata
 
 
+def test_frozen_calendar_rebuild_with_valid_immutable_forecast_still_proposes(
+    client_a, monkeypatch, session_factory, user_a, freeze_coaching_clock
+):
+    from tests.test_coaching_review_scope import rebuild_fixture
+
+    base = datetime(2026, 10, 9, 12, tzinfo=UTC)
+    helper_module = rebuild_fixture.__globals__["approved_program"].__module__
+    freeze_coaching_clock(base, helper_module)
+    _current, pid, body = rebuild_fixture(client_a, monkeypatch, session_factory, user_a)
+    response = client_a.post("/api/coaching/programs/" + pid + "/rebuild", json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["proposal"]["status"] == "awaiting_approval"
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
