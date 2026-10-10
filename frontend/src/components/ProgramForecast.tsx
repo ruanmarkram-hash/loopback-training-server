@@ -45,13 +45,13 @@ export function ForecastList({ sessions }: {sessions: ForecastSession[]}) {
  </details>)}</div>
 }
 export function ProgramForecast({ id,name }: {id: string;name?:string}) {
- const query = useQuery({queryKey: ['coaching', 'program', id], queryFn: () => api.get<{forecast: ForecastSession[]; forecastApproved: boolean;publicationReview?:PublicationReview}>(`/api/coaching/programs/${id}`), retry: false})
+ const query = useQuery({queryKey: ['coaching', 'program', id], queryFn: () => api.get<{forecast: ForecastSession[] | null; forecastApproved: boolean;publicationReview?:PublicationReview}>(`/api/coaching/programs/${id}`), retry: false})
  return <section className="prose-card coach-card" aria-label="Full program forecast">
   <h2>{name?`Current program: ${name}`:'Full program forecast'}</h2><p>Future sessions are estimates. Approval commits the near horizon to the queue. Queue status does not prove delivery to your Watch.</p>
   {query.isPending ? <Loading /> : query.error ? <ErrorNote error={query.error} /> : <>
    {query.data.publicationReview?.status==='review_required'?<div role="status" className="coach-change" aria-label="Future issuance paused for review"><h3>Future issuance paused for review</h3><p>{query.data.publicationReview.reason||'The current facts require review before future sessions can be issued.'}</p><p>Already committed sessions and history remain recorded.</p><h4>Supplied restrictions</h4>{query.data.publicationReview.restrictions.length?<ul>{query.data.publicationReview.restrictions.map((fact,index)=><li key={index}>{fact}</li>)}</ul>:<p>No restrictions supplied.</p>}<p>Supplied available days: {query.data.publicationReview.availableDays.length?query.data.publicationReview.availableDays.join(', '):'none supplied'}</p>{name?<a href="#coaching-facts">Review coaching facts and request a review</a>:<Link to="/coach">Review coaching facts and request a review</Link>}</div>:query.data.publicationReview?.status==='compatible'?<p role="status">Current publication review is compatible.</p>:<p role="status">Future issuance review status is unavailable.</p>}
    <button className="btn-ghost" disabled={query.isFetching} onClick={()=>void query.refetch()}>Refresh program forecast</button>
-   <ForecastList sessions={query.data.forecast} />
+   {query.data.forecast === null ? <p role="status">Forecast unavailable. Review the program facts before requesting a new forecast.</p> : <ForecastList sessions={query.data.forecast} />}
   </>}
  </section>
 }
