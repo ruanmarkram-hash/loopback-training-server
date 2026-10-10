@@ -36,6 +36,9 @@ ENV UV_PROJECT_ENVIRONMENT=$VIRTUAL_ENV
 RUN uv sync --locked --no-install-project --extra test
 
 COPY backend/ .
+# Docker COPY can reuse directory modes from a cached source layer. Keep the
+# application source searchable by the nonroot runtime user.
+RUN find /app -type d -exec chmod 0755 {} +
 
 FROM postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d AS pgtools
 
