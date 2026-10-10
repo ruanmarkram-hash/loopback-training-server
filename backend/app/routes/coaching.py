@@ -336,7 +336,7 @@ def training_context(db, user, requested_plan_id=None):
     )
     return dict(
         evidenceDigest=evidence_digest,
-        athleteReports=athlete_reports(workouts, feedback, now),
+        athleteReports=athlete_reports(workouts, feedback, now, queues=queues),
         policy=POLICY,
         profile=profile,
         metrics=review["metrics"],

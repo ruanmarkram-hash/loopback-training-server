@@ -469,8 +469,9 @@ def test_policy_repeated_quality_mixed_single_and_local_partial_week():
     for x in evidence:
         x.data["execution"] = "under_target"
     assert deterministic_review(workouts, evidence, [], [], now)["paceDirection"] == "slower"
-    skips = [SimpleNamespace(action="skip", dismissed=False, scheduled_date=now - timedelta(days=i)) for i in range(3)]
-    assert deterministic_review(workouts, [], skips, [], now)["interruptionReview"] is True
+    skips = [SimpleNamespace(action="skip", reason="busy", dismissed=False, scheduled_date=now - timedelta(days=i), user_id="synthetic", workout_id=uuid.uuid4(), new_date=None) for i in range(3)]
+    skipped_queues = [SimpleNamespace(id=f.workout_id, user_id=f.user_id, activity_type="running", status="skipped", scheduled_date=f.scheduled_date, title="Synthetic", workout_data={"activityType":"running", "singleGoal":{"type":"distance", "unit":"meters", "value":5000}}) for f in skips]
+    assert deterministic_review(workouts, [], skips, skipped_queues, now)["interruptionReview"] is True
 
 
 def test_immutable_device_identity_resolves_original_owned_version(client_a, client_b):
