@@ -1,9 +1,11 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 
+from app.activity_observation import canonical_workout, digest
+from app import activity_observation_service as observations
 from app.auth import CurrentUser
 from app.database import DbSession
 from app.models.feedback import WorkoutFeedback
@@ -26,42 +28,44 @@ router = APIRouter()
 
 
 @router.post("", response_model=WorkoutRead, status_code=status.HTTP_201_CREATED)
-def create_workout(payload: WorkoutCreate, db: DbSession, user: CurrentUser):
+def create_workout(payload: WorkoutCreate, db: DbSession, user: CurrentUser, request: Request):
     existing = db.get(Workout, payload.id)
     if existing and existing.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Workout id belongs to another user")
-    if existing:
-        existing.activity_type = payload.activity_type
-        existing.start_date = payload.start_date
-        existing.end_date = payload.end_date
-        existing.duration = payload.duration
-        existing.total_distance = payload.total_distance
-        existing.total_energy_burned = payload.total_energy_burned
-        existing.source = payload.source
-        existing.plan_workout_id = payload.plan_workout_id
-        existing.effort_score = payload.effort_score
-        existing.estimated_effort_score = payload.estimated_effort_score
-        existing.data = payload.data
-        db.commit()
-        db.refresh(existing)
-        return existing
-
-    workout = Workout(
-        id=payload.id,
-        user_id=user.id,
-        activity_type=payload.activity_type,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        duration=payload.duration,
-        total_distance=payload.total_distance,
-        total_energy_burned=payload.total_energy_burned,
-        source=payload.source,
-        plan_workout_id=payload.plan_workout_id,
-        effort_score=payload.effort_score,
-        estimated_effort_score=payload.estimated_effort_score,
-        data=payload.data,
-    )
-    db.add(workout)
+    try:
+        incoming_hash = digest(canonical_workout(payload))
+    except ValueError as exc:
+        raise HTTPException(422, "Workout evidence must contain finite canonical values") from exc
+    member = None
+    if payload.observation is not None:
+        member = observations.upload_member(db, user, observations.device_actor(request, user),
+                                            payload.observation, payload.id, incoming_hash)
+    workout = existing or Workout(id=payload.id, user_id=user.id)
+    # An exact retry must not churn updated_at or the claimed evidence checksum.
+    if existing is None or digest(canonical_workout(existing)) != incoming_hash:
+        for name in canonical_workout(payload):
+            # Canonicalization serves the hash; typed values serve ORM persistence.
+            setattr(workout, name, getattr(payload, name))
+    if existing is None:
+        db.add(workout)
+    if payload.observation is not None:
+        # A new explicit upload can supersede a withdrawal; unchanged ACK cannot.
+        workout.source_withdrawn = False
+    # before_flush preserves original-prescription normalization/assessment and
+    # updates the server source revision. ACK only the actually persisted shape.
+    if existing is not None and workout.source_evidence_hash is None:
+        workout.source_evidence_hash = incoming_hash
+        workout.source_evidence_revision = (workout.source_evidence_revision or 0)+1
+    db.flush()
+    if member is not None:
+        stored_hash = digest(canonical_workout(workout))
+        if workout.source_evidence_hash != stored_hash:
+            raise HTTPException(409, "Stored content revision is not reconciled")
+        member.disposition = "acknowledged"
+        member.server_payload_digest = stored_hash
+        member.workout_revision = workout.source_evidence_revision
+        from datetime import UTC
+        member.acknowledged_at = datetime.now(UTC)
     db.commit()
     db.refresh(workout)
     return workout

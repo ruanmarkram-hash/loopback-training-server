@@ -206,6 +206,9 @@ def assess(workout, prescription):
         reason="Original prescription not established",
         prescription_revision=None,
     )
+    if getattr(workout, "source_withdrawn", False):
+        result["reason"] = "Source-reported withdrawal; recorded load retained with uncertainty"
+        return result
     if not prescription:
         return result
     result["match"] = "exact_identifier"

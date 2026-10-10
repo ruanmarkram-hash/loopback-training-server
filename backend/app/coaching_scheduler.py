@@ -163,6 +163,9 @@ def scan_reviews(db, now=None):
             continue
         if "training" not in user.data_consent:
             continue
+        from app.activity_observation_service import scan_staleness
+
+        scan_staleness(db, user, now)
         for plan in db.scalars(select(Plan).where(Plan.user_id == user.id, Plan.status == "active")):
             publish_forecast(db, user.id, plan, now)
         lock_athlete(db, user.id)

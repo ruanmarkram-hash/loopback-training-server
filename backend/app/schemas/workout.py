@@ -2,13 +2,15 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
+from app.schemas.activity_observation import ObservationBinding
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 _KNOWN_FIELDS = {
     "id", "activityType", "startDate", "endDate",
     "duration", "totalDistance", "totalEnergyBurned", "source", "data",
-    "planWorkoutId", "effortScore", "estimatedEffortScore",
+    "planWorkoutId", "effortScore", "estimatedEffortScore", "observation",
 }
 
 
@@ -27,6 +29,7 @@ class WorkoutCreate(BaseModel):
     effort_score: float | None = Field(default=None, alias="effortScore", ge=1, le=10)
     estimated_effort_score: float | None = Field(default=None, alias="estimatedEffortScore", ge=1, le=10)
     data: dict = Field(default_factory=dict)
+    observation: ObservationBinding | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -60,6 +63,9 @@ class WorkoutRead(BaseModel):
     data: dict
     created_at: datetime
     updated_at: datetime
+    source_evidence_hash: str | None = None
+    source_evidence_revision: int = 0
+    source_withdrawn: bool = False
 
 
 class WorkoutList(BaseModel):

@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 
+from app.activity_observation import canonical_workout, digest
 from app.coaching_policy import POLICY, assess
 from app.models.action import WorkoutAction
 from app.models.coaching import ExecutionAssessment, PlanRevision, PrescriptionRevision, ReviewJob
@@ -301,9 +302,14 @@ def capture_changes(db, flush_context, instances):
                 if not specified or specified.user_id != row.user_id or specified.workout_id != row.plan_workout_id:
                     raise HTTPException(404, "Linked prescription not found")
                 prescription = specified
+            canonical_hash = digest(canonical_workout(row))
+            if row.source_evidence_hash != canonical_hash:
+                row.source_evidence_hash = canonical_hash
+                row.source_evidence_revision = (row.source_evidence_revision or 0) + 1
             data = assess(row, prescription)
             h = checksum(
-                dict(data=row.data, distance=row.total_distance, duration=row.duration, link=row.plan_workout_id)
+                dict(data=row.data, distance=row.total_distance, duration=row.duration, link=row.plan_workout_id,
+                     **({"sourceWithdrawn": True} if row.source_withdrawn else {}))
             )
             assessment = db.get(ExecutionAssessment, row.id)
             if assessment:

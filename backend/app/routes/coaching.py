@@ -294,6 +294,9 @@ def training_context(db, user, requested_plan_id=None):
     )
     # Bind policy inputs even when an update leaves derived aggregates unchanged.
     # Raw payloads stay private; the allowlisted athlete-report subset is projected below.
+    from app.activity_observation_service import semantic_context
+
+    observation = semantic_context(db, user, now, queues)
     evidence_digest = checksum(
         dict(
             activities=[
@@ -332,10 +335,12 @@ def training_context(db, user, requested_plan_id=None):
             ],
             profile=profile,
             sharedDomains=sorted(user.data_consent),
+            ingestionObservation=observation,
         )
     )
     return dict(
         evidenceDigest=evidence_digest,
+        ingestionObservation=observation,
         athleteReports=athlete_reports(workouts, feedback, now, queues=queues),
         policy=POLICY,
         profile=profile,

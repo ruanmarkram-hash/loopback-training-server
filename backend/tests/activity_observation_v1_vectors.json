@@ -1,0 +1,59 @@
+[
+  {
+    "name": "defaults_integer_to_typed_float",
+    "canonical": {
+      "activity_type": "running",
+      "start_date": "2026-10-11T12:00:00+00:00",
+      "end_date": "2026-10-11T12:30:00+00:00",
+      "duration": 1800.0,
+      "total_distance": 5000.0,
+      "total_energy_burned": null,
+      "source": null,
+      "plan_workout_id": null,
+      "effort_score": null,
+      "estimated_effort_score": null,
+      "data": {}
+    },
+    "sha256": "527f6dbd4029fcd346788a2356ba87649d8cd7ee636b60e34d5b5bc9762c0ed0"
+  },
+  {
+    "name": "unicode_arrays_and_volatile",
+    "canonical": {
+      "activity_type": "running",
+      "start_date": "2026-10-11T12:00:00.123000+00:00",
+      "end_date": "2026-10-11T12:30:00+00:00",
+      "duration": 1800.5,
+      "total_distance": 5000.25,
+      "total_energy_burned": null,
+      "source": null,
+      "plan_workout_id": null,
+      "effort_score": null,
+      "estimated_effort_score": null,
+      "data": {
+        "label": "Synthetic café / 🚲",
+        "samples": [
+          1,
+          2.0,
+          0.125
+        ],
+        "nested": {
+          "value": 3
+        }
+      }
+    },
+    "sha256": "f6a4d758038e58179595873201bfb8ed98ae6d0c8e58bc0570f917b8dbecaedb"
+  },
+  {
+    "name": "one_member_manifest",
+    "canonical": [
+      {
+        "sourceId": "00000000-0000-4000-8000-000000000001",
+        "payloadDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "disposition": "pending",
+        "aliasOf": null,
+        "explicitSourceDeletion": false
+      }
+    ],
+    "sha256": "7e7cd2dc5e12b1e0e86e875ebc43cc0820d0dd4dbdd5a939adb7cd215cd91283"
+  }
+]

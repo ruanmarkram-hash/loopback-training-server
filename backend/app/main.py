@@ -19,6 +19,7 @@ from app.database import SessionLocal
 from app.rate_limit import limiter
 from app.routes import (
     coaching,
+    activity_observation,
     actions,
     admin,
     auth,
@@ -131,6 +132,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 # Authenticated routes
 api_router = APIRouter(prefix="/api", dependencies=[Depends(get_current_user)])
+api_router.include_router(activity_observation.router, prefix="/activity-observations", tags=["activity-observations"])
 api_router.include_router(coaching.router, prefix="/coaching", tags=["coaching"])
 api_router.include_router(queue.workout_queue_router, prefix="/workouts/queue", tags=["queue"])
 api_router.include_router(actions.router, prefix="/workouts/actions", tags=["actions"])
