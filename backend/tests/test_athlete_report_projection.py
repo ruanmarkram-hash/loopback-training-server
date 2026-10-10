@@ -10,12 +10,15 @@ def activity(fatigue="Usual sessions felt hard", **report):
 
 
 def feedback(reason="tired", **values):
-    return SimpleNamespace(reason=reason, action="skip", scheduled_date=NOW-timedelta(days=2), dismissed=False, reason_note="private free text", workout_name="private title", **values)
+    import uuid
+    return SimpleNamespace(reason=reason, action="skip", scheduled_date=NOW-timedelta(days=2), dismissed=False, reason_note="private free text", workout_name="private title", user_id="synthetic", workout_id=uuid.uuid4(), new_date=None, **values)
 
 
 def project(workouts, missed):
     from app.coaching_reports import athlete_reports
-    return athlete_reports(workouts, missed, NOW)
+    queues = [SimpleNamespace(id=row.workout_id, user_id=row.user_id, activity_type="running", status="skipped", scheduled_date=row.scheduled_date)
+              for row in missed if hasattr(row, "workout_id")]
+    return athlete_reports(workouts, missed, NOW, queues=queues)
 
 
 def test_exact_self_report_survives_without_invented_severity_or_clearance():

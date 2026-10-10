@@ -173,11 +173,8 @@ def deterministic_review(workouts, assessments, feedback, queues, now=None, zone
         if current and current["distance_meters"] > average * 1.3 and direction == "faster":
             status = "mixed_evidence"
             direction = None
-    misses = [
-        f
-        for f in feedback
-        if f.action == "skip" and not f.dismissed and f.scheduled_date >= now - timedelta(days=POLICY["lookback_days"])
-    ]
+    from app.coaching_feedback import eligible_skips
+    misses = eligible_skips(feedback, queues, now, POLICY["lookback_days"])
     last = max((w.start_date for w in workouts if w.activity_type == "running" and w.start_date <= now), default=None)
     gap = (now - last).days if last else None
     return dict(

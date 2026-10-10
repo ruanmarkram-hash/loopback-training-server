@@ -7,6 +7,7 @@ crosses the worker boundary. Free text remains untrusted data.
 from datetime import UTC, datetime, timedelta
 from typing import Literal, TypedDict
 from app.coaching_policy import POLICY
+from app.coaching_feedback import REASONS, eligible_skips, feedback_identity
 
 
 class FatigueReport(TypedDict):
@@ -31,7 +32,6 @@ class MissedWorkoutReport(TypedDict):
 LIMIT = 25
 ACTIVITY_DATE_LIMIT = 5
 FATIGUE_TEXT_LIMIT = 500
-REASONS = frozenset(("busy", "tired", "weather", "soreness", "motivation", "other"))
 ACTIONS = frozenset(("move", "adjust", "skip"))
 
 
@@ -49,12 +49,14 @@ def aware_date(value):
         return None
 
 
-def athlete_reports(workouts, feedback, now=None):
+def athlete_reports(workouts, feedback, now=None, *, queues=()):
     now = now or datetime.now(UTC)
     start = now - timedelta(days=POLICY["lookback_days"])
     statements = {}
     missed: list[MissedWorkoutReport] = []
     omitted_fatigue = omitted_feedback = 0
+    eligible = {id(row) for row in eligible_skips(feedback, queues, now, POLICY["lookback_days"])}
+    projected_skips = set()
     for workout in workouts:
         if workout.activity_type != "running":
             continue
@@ -85,6 +87,12 @@ def athlete_reports(workouts, feedback, now=None):
                 or scheduled is None or not start <= scheduled <= now):
             omitted_feedback += 1
             continue
+        if row.action == "skip":
+            key = feedback_identity(row)
+            if id(row) not in eligible or key in projected_skips:
+                omitted_feedback += 1
+                continue
+            projected_skips.add(key)
         missed.append(dict(reason=row.reason, action=row.action, scheduledDate=scheduled.isoformat(),
                            source="athlete_missed_workout_feedback", untrusted=True))
     fatigue: list[FatigueReport] = []
