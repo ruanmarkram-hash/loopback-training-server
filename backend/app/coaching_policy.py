@@ -35,7 +35,10 @@ def speed_meters_per_second(alert):
     factor = {"metersPerSecond": 1, "kilometersPerHour": 1 / 3.6}.get(unit)
     if factor is None or not all(finite_positive(alert.get(k)) for k in ("min", "max")) or alert["min"] > alert["max"]:
         return None
-    return alert["min"] * factor, alert["max"] * factor
+    bounds = alert["min"] * factor, alert["max"] * factor
+    if not all(finite_positive(value) for value in bounds):
+        return None
+    return bounds
 
 
 def canonical_metrics(workouts, queues, now=None, zone="Australia/Brisbane"):
@@ -263,6 +266,9 @@ def assess(workout, prescription):
         return result
     eligible = []
     measured_paces = []
+    original_pace_bounds = []
+    quality_coverages = []
+    quality_completions = []
     for index, step in enumerate(ordered):
         segment = measured[index]
         purpose = step.get("purpose")
@@ -293,6 +299,9 @@ def assess(workout, prescription):
         else:
             result["reason"] = "Original open goal not comparable"
             return result
+        if not finite_positive(complete):
+            result["reason"] = "Derived prescribed step completion is not finite"
+            return result
         if complete < POLICY["minimum_coverage"]:
             result.update(structure="partial", reason="Prescribed step incomplete")
             return result
@@ -312,7 +321,13 @@ def assess(workout, prescription):
         lo = 1000 / bounds[1]
         hi = 1000 / bounds[0]
         pace = duration / distance * 1000
+        if not all(finite_positive(value) for value in (lo, hi, pace)):
+            result["reason"] = "Derived original or measured pace is not finite"
+            return result
         measured_paces.append(pace)
+        original_pace_bounds.append((lo, hi))
+        quality_coverages.append(segment["sampleCoverage"])
+        quality_completions.append(complete)
         eligible.append(
             "over_target"
             if pace < lo * (1 - POLICY["pace_error_band"])
@@ -324,11 +339,13 @@ def assess(workout, prescription):
     if not eligible or composition.get("trainingPurpose") not in ("quality", "intervals", "tempo"):
         result["reason"] = "No explicit original quality purpose and pace target ranges"
         return result
-    if (
-        measured_paces
-        and (max(measured_paces) - min(measured_paces)) / (sum(measured_paces) / len(measured_paces))
-        > POLICY["maximum_variability"]
-    ):
+    # Normalize before summing: avoid overflow of the sum and underflow of
+    # individually divided subnormal paces. At least one normalized value is 1.
+    pace_scale = max(measured_paces)
+    variability = ((pace_scale - min(measured_paces)) / pace_scale) / (
+        sum(pace / pace_scale for pace in measured_paces) / len(measured_paces)
+    )
+    if variability > POLICY["maximum_variability"]:
         result.update(
             pace_evidence="ineligible",
             execution="variable",
@@ -339,5 +356,19 @@ def assess(workout, prescription):
         pace_evidence="eligible",
         execution=eligible[0] if len(set(eligible)) == 1 else "variable",
         reason="All measured prescribed steps compared to immutable original target ranges",
+        # Bounded derived facts only, after every provenance/structure guard.
+        # Original bounds come from the immutable prescription, never activity hints.
+        qualityEvidence=dict(
+            sessionDate=started.isoformat(),
+            prescriptionRevision=str(prescription.id),
+            qualityStepCount=len(measured_paces),
+            measuredPaceMinSecondsPerKm=min(measured_paces),
+            measuredPaceMaxSecondsPerKm=max(measured_paces),
+            originalPaceMinSecondsPerKm=min(lo for lo, _ in original_pace_bounds),
+            originalPaceMaxSecondsPerKm=max(hi for _, hi in original_pace_bounds),
+            minimumSampleCoverage=min(quality_coverages),
+            minimumStepCompletion=min(quality_completions),
+            paceVariabilityFraction=variability,
+        ),
     )
     return result

@@ -284,7 +284,7 @@ export function Users() {
             return (
               <div key={u.id}>
               <div className="u-row" data-user-id={u.id} style={u.isActive ? undefined : { opacity: 0.55 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <div className="u-member" style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span
                     className="avatar-lg"
                     style={{ width: 38, height: 38, fontSize: 15, borderRadius: 11, color: u.role === 'admin' ? 'var(--accent)' : 'var(--blue)' }}
@@ -292,7 +292,7 @@ export function Users() {
                     {(u.displayName || u.username).charAt(0).toUpperCase()}
                   </span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 600 }}>
+                    <div className="u-member-name" style={{ fontSize: 14.5, fontWeight: 600 }}>
                       {u.displayName || u.username}
                       {isSelf && <span className="t-this" style={{ marginLeft: 8 }}>You</span>}
                     </div>

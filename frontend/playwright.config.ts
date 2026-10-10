@@ -4,7 +4,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testIgnore: '**/coaching-review.spec.ts', // Mock transport cases run only under the separate review config.
+  testIgnore: ['**/coaching-review.spec.ts', '**/narrow-controls-dom.spec.ts'], // Isolated regressions use separate configs.
   globalSetup: './tests/e2e/fixture-setup.ts',
   fullyParallel: false,
   workers: 1,

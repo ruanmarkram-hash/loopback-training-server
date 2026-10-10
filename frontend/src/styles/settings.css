@@ -144,6 +144,13 @@
   border-top: 1px solid rgba(245, 235, 220, 0.05);
   padding: 15px 20px;
 }
+.u-member {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.u-member .avatar-lg {
+  flex-shrink: 0;
+}
 .cli-box {
   margin-top: 14px;
   border-radius: 14px;
@@ -178,6 +185,4 @@
   }
   .users-table .u-head > :last-child { display: none; }
   .u-actions { grid-column: 1 / -1; }
-  .u-row .avatar-lg { flex-shrink: 0; }
-  .u-row > div:first-child { overflow-wrap: anywhere; }
 }
