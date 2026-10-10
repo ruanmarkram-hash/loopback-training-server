@@ -1,3 +1,4 @@
+import {fillElapsed,expectElapsed} from './elapsed-helpers'
 import {test as base,expect,type Page} from '@playwright/test'
 import {useFixtureSession as retainedFixtureSession,fixtureApi as retainedFixtureApi,screenshot,expectNoOverflow} from './helpers'
 
@@ -23,12 +24,13 @@ test('WEB-COACH-001 unknown current ability blocks preview without mutation',asy
  await expect(page.getByRole('button',{name:'Refresh status',exact:true})).toBeEnabled()
  await page.getByLabel('Goal',{exact:true}).selectOption('10k')
  for(const day of ['mon','tue','wed','thu','fri','sat','sun']){const button=page.getByRole('button',{name:day,exact:true});if(await button.getAttribute('aria-pressed')==='true')await button.click()}
- for(const label of ['Current pace (m:ss /km)','Current weekly distance (km)','Current longest run (km)','Benchmark observation time (local)','Benchmark source'])await page.getByLabel(label,{exact:true}).fill('')
+ await fillElapsed(page,'Current pace','',true)
+ for(const label of ['Current weekly distance (km)','Current longest run (km)','Benchmark observation time (local)','Benchmark source'])await page.getByLabel(label,{exact:true}).fill('')
  await page.getByRole('button',{name:'Preview program',exact:true}).click()
  await expect(page.getByRole('alert').filter({hasText:'Choose one to five'})).toBeVisible()
  await page.getByRole('button',{name:'mon',exact:true}).click();await expect(page.getByRole('button',{name:'mon',exact:true})).toHaveAttribute('aria-pressed','true')
  await page.getByLabel('Event date',{exact:true}).fill('2027-03-01')
- await page.getByLabel('Target time (optional)',{exact:true}).fill('40:00')
+ await fillElapsed(page,'Target time (optional)','40:00')
  await page.getByRole('button',{name:'Preview program',exact:true}).click()
  await expect(page.getByRole('alert').filter({hasText:'Aspirations cannot replace current ability'})).toBeVisible()
  expect(previews).toBe(0)
@@ -47,15 +49,15 @@ test('WEB-COACH-002 profile reload preview repeat cancel dismiss approve persist
  await page.getByLabel('Goal',{exact:true}).selectOption('10k')
  const start=new Date();start.setDate(start.getDate()+2);const date=(value:Date)=>`${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`
  const race=new Date(start);race.setDate(race.getDate()+84)
- await page.getByLabel('Program start',{exact:true}).fill(date(start));await page.getByLabel('Event date',{exact:true}).fill(date(race));await page.getByLabel('Target time (optional)',{exact:true}).fill('50:00')
+ await page.getByLabel('Program start',{exact:true}).fill(date(start));await page.getByLabel('Event date',{exact:true}).fill(date(race));await fillElapsed(page,'Target time (optional)','50:00')
  // Clear inherited availability so this fixture remains explicit and repeatable.
  for(const day of ['mon','tue','wed','thu','fri','sat','sun']){const button=page.getByRole('button',{name:day,exact:true});if(await button.getAttribute('aria-pressed')==='true')await button.click()}
  for(const day of ['mon','wed','sat'])await page.getByRole('button',{name:day,exact:true}).click()
- await page.getByLabel('Current pace (m:ss /km)',{exact:true}).fill('6:00');await page.getByLabel('Current weekly distance (km)',{exact:true}).fill('18');await page.getByLabel('Current longest run (km)',{exact:true}).fill('7')
+ await fillElapsed(page,'Current pace','6:00',true);await page.getByLabel('Current weekly distance (km)',{exact:true}).fill('18');await page.getByLabel('Current longest run (km)',{exact:true}).fill('7')
  await page.getByLabel('Benchmark observation time (local)',{exact:true}).fill(`${date(new Date())}T${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`);await page.getByLabel('Benchmark source',{exact:true}).fill(source);await page.getByLabel('Benchmark confidence (optional, 0–1)',{exact:true}).fill('0.7')
  await page.getByRole('button',{name:'Save coaching profile',exact:true}).click();await expect(page.getByRole('status')).toHaveText('Coaching profile saved.')
  const profile=await get('/api/coaching/profile');expect(profile.benchmark).toMatchObject({pace_seconds_per_km:360,weekly_distance_meters:18000,long_run_meters:7000,confidence:0.7,source:source});expect(profile.goal.target_seconds).toBe(3000)
- await page.reload();await expect(page.getByLabel('Current pace (m:ss /km)',{exact:true})).toHaveValue('6:00');await expect(page.getByLabel('Current weekly distance (km)',{exact:true})).toHaveValue('18');await expect(page.getByLabel('Target time (optional)',{exact:true})).toHaveValue('50:00')
+ await page.reload();await expectElapsed(page,'Current pace','6:00',true);await expect(page.getByLabel('Current weekly distance (km)',{exact:true})).toHaveValue('18');await expectElapsed(page,'Target time (optional)','50:00')
  // Program start is an intentional preview input, rather than a stored profile fact.
  await page.getByLabel('Program start',{exact:true}).fill(date(start))
  const preview=async()=>{const pending=page.waitForResponse(r=>r.url().endsWith('/api/coaching/program')&&r.request().method()==='POST');await page.getByRole('button',{name:'Preview program',exact:true}).click();const response=await pending;const data=await response.json();expect(response.status(),JSON.stringify(data.detail)).toBe(201);return data}
@@ -66,7 +68,7 @@ test('WEB-COACH-002 profile reload preview repeat cancel dismiss approve persist
  const again=await preview();expect(again.plan.id).toBe(first.plan.id);expect(again.proposal.id).toBe(first.proposal.id)
  dialog=page.getByRole('dialog',{name:'Review coaching proposal',exact:true});await dialog.getByRole('button',{name:'Dismiss proposal',exact:true}).click();await expect(dialog).toHaveCount(0);await page.reload();expect((await get('/api/coaching/proposals')).find((p:{id:string})=>p.id===first.proposal.id).status).toBe('dismissed');expect(await get('/api/queue')).toEqual(oldQueue)
  // A distinct goal intent creates a new proposal. No old dismissed draft is silently activated.
- await page.getByLabel('Target time (optional)',{exact:true}).fill('49:00');await page.getByLabel('Program start',{exact:true}).fill(date(start));const second=await preview();expect(second.plan.id).not.toBe(first.plan.id)
+ await fillElapsed(page,'Target time (optional)','49:00');await page.getByLabel('Program start',{exact:true}).fill(date(start));const second=await preview();expect(second.plan.id).not.toBe(first.plan.id)
  dialog=page.getByRole('dialog',{name:'Review coaching proposal',exact:true});await expect(dialog.getByRole('button',{name:'Approve changes',exact:true})).toBeEnabled();await dialog.getByRole('button',{name:'Approve changes',exact:true}).dblclick();await expect(dialog).toHaveCount(0)
  const committed=await get(`/api/plans/${second.plan.id}`);expect(committed.status).toBe('active');expect(committed.revision).toBe(second.proposal.base_revision+1)
  const queued=await get('/api/queue');expect(queued.length).toBeGreaterThan(oldQueue.length);const planQueue=queued.filter((item:{plan_id:string})=>item.plan_id===second.plan.id);expect(planQueue.length).toBeGreaterThan(0);expect(planQueue.length).toBeLessThan(second.plan.forecast.length);for(const item of planQueue){expect(new Date(item.scheduled_date).getTime()).toBeLessThanOrEqual(Date.now()+14*86400000);expect(item.workout_data.blocks.length).toBeGreaterThan(0)}
@@ -78,17 +80,17 @@ test('WEB-COACH-003 unsaved profile edit clears saved status and retains persist
  info.annotations.push({type:'scenario',description:'UI-012'},{type:'control',description:JSON.stringify({id:'web.coach.profile-save',states:['saved_status','edited_unsaved_status','no_unsaved_mutation']})})
  await useFixtureSession(page,'athleteB');await page.goto('/coach')
  await expect(page.getByRole('button',{name:'Refresh status',exact:true})).toBeEnabled()
- await page.getByLabel('Goal',{exact:true}).selectOption('general_fitness');await page.getByLabel('Current pace (m:ss /km)',{exact:true}).fill('6:00');await page.getByLabel('Current weekly distance (km)',{exact:true}).fill('18');await page.getByLabel('Current longest run (km)',{exact:true}).fill('7');await page.getByLabel('Benchmark source',{exact:true}).fill('Synthetic saved-status regression');await page.getByLabel('Benchmark observation time (local)',{exact:true}).fill(new Date().toISOString().slice(0,16));for(const day of ['mon','tue','wed','thu','fri','sat','sun']){const button=page.getByRole('button',{name:day,exact:true});if(await button.getAttribute('aria-pressed')==='true')await button.click()};await page.getByRole('button',{name:'mon',exact:true}).click()
+ await page.getByLabel('Goal',{exact:true}).selectOption('general_fitness');await fillElapsed(page,'Current pace','6:00',true);await page.getByLabel('Current weekly distance (km)',{exact:true}).fill('18');await page.getByLabel('Current longest run (km)',{exact:true}).fill('7');await page.getByLabel('Benchmark source',{exact:true}).fill('Synthetic saved-status regression');await page.getByLabel('Benchmark observation time (local)',{exact:true}).fill(new Date().toISOString().slice(0,16));for(const day of ['mon','tue','wed','thu','fri','sat','sun']){const button=page.getByRole('button',{name:day,exact:true});if(await button.getAttribute('aria-pressed')==='true')await button.click()};await page.getByRole('button',{name:'mon',exact:true}).click()
  await page.getByRole('button',{name:'Save coaching profile',exact:true}).click();await expect(page.getByRole('status')).toHaveText('Coaching profile saved.')
- await page.getByLabel('Current pace (m:ss /km)',{exact:true}).fill('6:01')
+ await fillElapsed(page,'Current pace','6:01',true)
  await expect(page.getByRole('status')).toHaveCount(0)
  const persisted=await request.get('/api/coaching/profile',fixtureApi('athleteB'));expect((await persisted.json()).benchmark.pace_seconds_per_km).toBe(360)
- await page.reload();await expect(page.getByLabel('Current pace (m:ss /km)',{exact:true})).toHaveValue('6:00')
+ await page.reload();await expectElapsed(page,'Current pace','6:00',true)
 })
 
 test('WEB-COACH-004 forecast native controls participate in modal keyboard focus',async({page,request},info)=>{
  info.annotations.push({type:'scenario',description:'UI-010'},{type:'control',description:JSON.stringify({id:'web.coach.forecast-session',states:['keyboard_open','keyboard_collapse','focus_reachable']})})
- await useFixtureSession(page,'athleteB');await page.goto('/coach');await expect(page.getByLabel('Current pace (m:ss /km)',{exact:true})).toHaveValue('6:00')
+ await useFixtureSession(page,'athleteB');await page.goto('/coach');await expectElapsed(page,'Current pace','6:00',true)
  await page.getByLabel('Goal',{exact:true}).selectOption('general_fitness');await page.getByLabel('Event date',{exact:true}).fill('');const future=new Date();future.setDate(future.getDate()+2);await page.getByLabel('Program start',{exact:true}).fill(`${future.getFullYear()}-${String(future.getMonth()+1).padStart(2,'0')}-${String(future.getDate()).padStart(2,'0')}`);await page.getByLabel('Benchmark source',{exact:true}).fill(`Synthetic modal keyboard ${Date.now()}`)
  const oldQueue=await request.get('/api/queue',fixtureApi('athleteB'));const queue=await oldQueue.json()
  await page.getByRole('button',{name:'Preview program',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Review coaching proposal',exact:true});await expect(dialog).toBeVisible();await screenshot(page,info.project.name,'coaching-modal-keyboard-initial')

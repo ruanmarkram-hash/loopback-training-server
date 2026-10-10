@@ -1,6 +1,26 @@
+/** Expand Number's shortest round-trip representation without scientific notation or rounding. */
+export function decimalSeconds(value: number): string {
+  if (!Number.isFinite(value)) return ''
+  const text=String(value)
+  if (!/[eE]/.test(text)) return text
+  const [coefficient,exponentText]=text.toLowerCase().split('e')
+  const sign=coefficient.startsWith('-')?'-':''
+  const unsigned=sign?coefficient.slice(1):coefficient
+  const [whole,fraction='']=unsigned.split('.')
+  const digits=whole+fraction,point=whole.length+Number(exponentText)
+  return sign+(point<=0?'0.'+'0'.repeat(-point)+digits:point>=digits.length?digits+'0'.repeat(point-digits.length):digits.slice(0,point)+'.'+digits.slice(point))
+}
+
+export function formatElapsedSeconds(seconds: number, duration=false): string {
+  if (!Number.isFinite(seconds) || seconds<=0) return ''
+  const whole=Math.floor(seconds),fraction=decimalSeconds(seconds).split('.')[1]
+  const tail=String(whole%60).padStart(2,'0')+(fraction?'.'+fraction:'')
+  return duration?`${Math.floor(whole/3600)}:${String(Math.floor(whole/60)%60).padStart(2,'0')}:${tail}`:`${Math.floor(whole/60)}:${tail}`
+}
+
 /** User-entered current ability and aspiration stay distinct. All values are metric. */
 export function parsePace(input: string): number | null {
-  const match = /^(\d{1,2}):([0-5]\d)$/.exec(input.trim())
+  const match = /^(\d{1,2}):([0-5]\d(?:\.\d+)?)$/.exec(input.trim())
   if (!match) return null
   const seconds = Number(match[1]) * 60 + Number(match[2])
   return seconds > 0 ? seconds : null
@@ -8,8 +28,8 @@ export function parsePace(input: string): number | null {
 
 export function parseGoalTime(input: string): number | null {
   const value = input.trim()
-  const minutes = /^(\d{1,3}):([0-5]\d)$/.exec(value)
-  const hours = /^(\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(value)
+  const minutes = /^(\d{1,3}):([0-5]\d(?:\.\d+)?)$/.exec(value)
+  const hours = /^(\d{1,2}):([0-5]\d):([0-5]\d(?:\.\d+)?)$/.exec(value)
   const seconds = hours ? Number(hours[1]) * 3600 + Number(hours[2]) * 60 + Number(hours[3])
     : minutes ? Number(minutes[1]) * 60 + Number(minutes[2]) : 0
   return seconds > 0 ? seconds : null

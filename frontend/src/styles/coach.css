@@ -33,3 +33,10 @@
 .coach-form input[type=date][data-empty=true]:not(:focus)::-webkit-datetime-edit { opacity:0; }
 
 .coach-evidence-week summary { display:block; padding:12px 0; }
+.elapsed-input { border:0; padding:0; margin:0; min-width:0; display:flex; flex-direction:column; gap:8px; }
+.elapsed-input legend { font-size:13px; color:var(--text-2); margin-bottom:8px; }
+.elapsed-parts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.elapsed-parts:has(>label:nth-child(2):last-child) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.elapsed-parts label { min-width:0; font-size:12px; }
+.elapsed-parts .field-input { padding-inline:8px; min-height:44px; }
+.elapsed-clear { align-self:flex-start; min-height:44px; }

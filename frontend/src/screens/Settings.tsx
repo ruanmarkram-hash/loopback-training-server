@@ -208,7 +208,7 @@ function NewTokenModal({ onClose }: { onClose: () => void }) {
       />
 
       <div className="field-label">Expires</div>
-      <div style={{ display: 'flex', gap: 6 }}>
+      <div className="choice-grid">
         {EXPIRY_CHOICES.map((c) => (
           <button
             key={c.label}

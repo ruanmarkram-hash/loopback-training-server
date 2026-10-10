@@ -58,7 +58,7 @@ function CreateUserModal({ onClose }: { onClose: () => void }) {
         onChange={(e) => setDisplayName(e.target.value)}
       />
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+      <div className="form-columns" style={{ marginBottom: 14 }}>
         <div style={{ flex: 1 }}>
           <div className="field-label">Username</div>
           <input

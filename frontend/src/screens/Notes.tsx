@@ -107,7 +107,7 @@ function NoteEditModal({ note, onClose }: { note: PlanNote; onClose: () => void 
         onChange={(e) => setBody(e.target.value)}
       />
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 22 }}>
+      <div className="form-columns" style={{ marginBottom: 22 }}>
         <div style={{ flex: 1 }}>
           <div className="field-label">Importance</div>
           <div style={{ display: 'flex', gap: 6 }}>

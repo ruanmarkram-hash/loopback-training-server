@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test'
+for(const width of [320,390,844])test(`WEB-SEMANTIC-LAYOUT ${width} shared choices retain 44px targets and complete modal content`,async({page},info)=>{
+ await page.setViewportSize({width,height:640})
+ const user={id:'mock-ui-admin',username:'mock-ui-admin',displayName:'Mock UI admin',role:'admin'}
+ await page.addInitScript(user=>{localStorage.setItem('loopback.token','synthetic-mock-ui');localStorage.setItem('loopback.tokenId','mock-ui-token');localStorage.setItem('loopback.user',JSON.stringify(user))},user)
+ await page.route('**/api/**',r=>{const path=new URL(r.request().url()).pathname;return r.fulfill({status:200,json:path==='/api/auth/me'?{user,tokens:[]}:path==='/api/auth/setup'?{required:false}:path==='/api/health'?{service:'ok',database:'ok'}:[]})})
+ await page.goto('/settings');await page.getByRole('button',{name:'New token',exact:true}).click();const token=page.getByRole('dialog',{name:'Create token',exact:true});await expect(token.getByRole('button',{name:'1 year',exact:true})).toBeVisible()
+ const check=async()=>{const dialog=page.getByRole('dialog');await expect.poll(()=>dialog.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);for(const button of await dialog.locator('.filter-chip').all()){const box=await button.boundingBox();expect(box!.height).toBeGreaterThanOrEqual(44);expect(box!.width).toBeGreaterThanOrEqual(44);expect(box!.x+box!.width).toBeLessThanOrEqual(width)}}
+ await check();if(width===320){await token.evaluate(e=>Promise.all(e.getAnimations({subtree:true}).map(a=>a.finished)));{const capture=info.outputPath('settled320-token-choices.png');await page.screenshot({path:capture});await info.attach('settled320-token-choices',{path:capture,contentType:'image/png'})}}await page.keyboard.press('Escape');await page.goto('/users');await page.getByRole('button',{name:'Create user',exact:true}).click();await check();const username=page.getByLabel('Username',{exact:true});await username.fill('synthetic-long-user-name');const box=await username.boundingBox();expect(box!.width).toBeGreaterThanOrEqual(width<=600?200:150);await expect(username).toHaveValue('synthetic-long-user-name');if(width===320){await page.getByRole('dialog').evaluate(e=>Promise.all(e.getAnimations({subtree:true}).map(a=>a.finished)));{const capture=info.outputPath('settled320-create-member.png');await page.screenshot({path:capture});await info.attach('settled320-create-member',{path:capture,contentType:'image/png'})}}await page.keyboard.press('Escape')
+})
+
+test('WEB-SEMANTIC-DATE native calendars and decimal fields use appropriate shared affordances',async({page})=>{
+ const user={id:'mock-input-user',username:'mock-input-user',displayName:'Mock input',role:'user'}
+ await page.addInitScript(user=>{localStorage.setItem('loopback.token','synthetic-mock-input');localStorage.setItem('loopback.tokenId','mock-input-token');localStorage.setItem('loopback.user',JSON.stringify(user))},user)
+ const profile={goal:{type:'general_fitness'},available_days:['mon'],timezone:'Australia/Brisbane',benchmark:{level:'established',pace_seconds_per_km:360,weekly_distance_meters:18000,long_run_meters:7000,source:'Synthetic input fixture',observed_at:'2026-10-09T00:00:00Z'}}
+ await page.route('**/api/**',r=>{const path=new URL(r.request().url()).pathname;return r.fulfill({status:200,json:path==='/api/coaching/status'?{profile,coverage:{history:'unknown'},metrics:{session_count:0,actual_distance_meters:0,planned_future_session_count:0},jobs:[],proposals:[]}:path==='/api/auth/setup'?{required:false}:[]})})
+ await page.goto('/coach');await expect(page.getByLabel('Benchmark source',{exact:true})).toHaveValue(profile.benchmark.source)
+ for(const label of ['Event date','Program start','Benchmark observation time (local)'])expect(await page.getByLabel(label,{exact:true}).evaluate(e=>getComputedStyle(e).colorScheme)).toBe('dark')
+ for(const label of ['Current weekly distance (km)','Current longest run (km)','Benchmark confidence (optional, 0–1)','Current pace seconds','Target time (optional) seconds'])await expect(page.getByLabel(label,{exact:true})).toHaveAttribute('inputmode','decimal')
+ for(const label of ['Current pace minutes','Target time (optional) hours','Target time (optional) minutes'])await expect(page.getByLabel(label,{exact:true})).toHaveAttribute('inputmode','numeric')
+})
