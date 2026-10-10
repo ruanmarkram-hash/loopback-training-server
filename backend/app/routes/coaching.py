@@ -25,6 +25,7 @@ from app.coaching_policy import (
     finite_positive,
     speed_meters_per_second,
 )
+from app.coaching_reports import athlete_reports
 from app.coaching_program import program_forecast
 from app.coaching_service import checksum, enqueue, lock_athlete, normalize_job_key, validate_composition
 from app.coaching_structural import (
@@ -135,13 +136,15 @@ def put_profile(body: ProfileInput, db: DbSession, user: CurrentUser):
 @router.get("/status")
 def get_status(db: DbSession, user: CurrentUser):
     workouts = db.scalars(select(Workout).where(Workout.user_id == user.id).order_by(Workout.id)).all()
+    context = training_context(db, user)
     return dict(
         schemaVersion="1",
         policyVersion=POLICY["version"],
         policy=POLICY,
         profile=get_profile(db, user),
-        metrics=training_context(db, user)["metrics"],
-        assessment=training_context(db, user)["assessment"],
+        metrics=context["metrics"],
+        assessment=context["assessment"],
+        athleteReports=context["athleteReports"],
         coverage={"history": "available" if workouts else "unknown"},
         jobs=list_jobs(db, user),
         proposals=list_proposals(db, user),
@@ -268,7 +271,8 @@ def training_context(db, user, requested_plan_id=None):
                     composition=q.workout_data,
                 )
             )
-    # No location trails, raw medical/body/nutrition/recovery data or free-form notes.
+    # No location trails, raw medical/body/nutrition/recovery data or general notes.
+    # Only the separately allowlisted, unverified athlete fatigue report is projected.
     profile = get_profile(db, user) or {}
     feedback = db.scalars(
         select(WorkoutFeedback).where(WorkoutFeedback.user_id == user.id).order_by(WorkoutFeedback.id)
@@ -289,7 +293,7 @@ def training_context(db, user, requested_plan_id=None):
         t and datetime.fromisoformat(t) > now - timedelta(hours=POLICY["cooldown_hours"]) for t in times
     )
     # Bind policy inputs even when an update leaves derived aggregates unchanged.
-    # Raw activity/feedback payloads stay private; only their digest enters CLI context.
+    # Raw payloads stay private; the allowlisted athlete-report subset is projected below.
     evidence_digest = checksum(
         dict(
             activities=[
@@ -332,6 +336,7 @@ def training_context(db, user, requested_plan_id=None):
     )
     return dict(
         evidenceDigest=evidence_digest,
+        athleteReports=athlete_reports(workouts, feedback, now),
         policy=POLICY,
         profile=profile,
         metrics=review["metrics"],
